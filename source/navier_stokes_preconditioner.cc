@@ -467,7 +467,7 @@ public:
   {
     preconditioner.reset();
     Teuchos::ParameterList parameter_list;
-    ML_Epetra::SetDefaults("SA", parameter_list);
+    //ML_Epetra::SetDefaults("SA", parameter_list);
     parameter_list.set("smoother: type", "Chebyshev");
     parameter_list.set("smoother: Chebyshev alpha", 10.);
     parameter_list.set("aggregation: threshold", 0.02);
