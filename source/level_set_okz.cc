@@ -262,6 +262,13 @@ LevelSetOKZSolver<dim>::initialize_data_structures()
   params.convection_stabilization   = this->parameters.convection_stabilization;
   params.do_iteration               = this->parameters.do_iteration;
   params.tol_nl_iteration           = this->parameters.tol_nl_iteration;
+  params.time_step_scheme           = this->parameters.time_step_scheme;
+
+  LevelSetOKZSolverAdvanceConcentrationBoundaryDescriptor bcs;
+
+  bcs.fluid_type_plus  = this->boundary->fluid_type_plus;
+  bcs.fluid_type_minus = this->boundary->fluid_type_minus;
+  bcs.symmetry         = this->boundary->symmetry;
 
   // set time stepping parameters of level set to correspond with the values from
   // Navier-Stokes
@@ -289,9 +296,8 @@ LevelSetOKZSolver<dim>::initialize_data_structures()
     this->cell_diameters,
     this->constraints,
     this->pcout,
-    this->boundary,
+    bcs,
     this->matrix_free,
-    this->timer,
     params,
     this->artificial_viscosities,
     this->global_max_velocity,
@@ -500,6 +506,7 @@ template <int dim>
 void
 LevelSetOKZSolver<dim>::advance_concentration()
 {
+  TimerOutput::Scope timer(*this->timer, "LS advance concentration.");
   advection_operator->advance_concentration();
 }
 

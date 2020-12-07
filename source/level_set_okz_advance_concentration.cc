@@ -29,6 +29,10 @@
 
 namespace
 {
+  /**
+   * Compute maximal velocity for a given vector and the corresponding
+   * dof-handler object.
+   */
   template <int dim, typename VectorType>
   double
   get_maximal_velocity(const DoFHandler<dim> &dof_handler, const VectorType solution)
@@ -79,8 +83,7 @@ LevelSetOKZSolverAdvanceConcentration<dim>::local_advance_concentration(
         &evaluated_convection[cell * ls_values.n_q_points];
       ls_values.reinit(cell);
 
-      ls_values.read_dof_values(src);
-      ls_values.evaluate(true, true);
+      ls_values.gather_evaluate(src, true, true);
 
       for (unsigned int q = 0; q < ls_values.n_q_points; ++q)
         {
@@ -93,8 +96,7 @@ LevelSetOKZSolverAdvanceConcentration<dim>::local_advance_concentration(
           if (this->parameters.convection_stabilization)
             ls_values.submit_gradient(artificial_viscosities[cell] * ls_grad, q);
         }
-      ls_values.integrate(true, this->parameters.convection_stabilization);
-      ls_values.distribute_local_to_global(dst);
+      ls_values.integrate_scatter(true, this->parameters.convection_stabilization, dst);
     }
 }
 
@@ -199,8 +201,7 @@ LevelSetOKZSolverAdvanceConcentration<dim>::local_advance_concentration_rhs(
             ls_values.submit_gradient(-artificial_viscosities[cell] * ls_grad, q);
           velocities[q] = vel_values.get_value(q);
         }
-      ls_values.integrate(true, this->parameters.convection_stabilization);
-      ls_values.distribute_local_to_global(dst);
+      ls_values.integrate_scatter(true, this->parameters.convection_stabilization, dst);
     }
 }
 
@@ -234,7 +235,7 @@ LevelSetOKZSolverAdvanceConcentration<dim>::advance_concentration_vmult(
       // Boundary part of stabilization-term:
       FEFaceValues<dim> fe_face_values(
         fe,
-        this->matrix_free.get_face_quadrature(1 /*TODO????*/),
+        this->matrix_free.get_face_quadrature(parameters.quad_index),
         update_values | update_gradients | update_JxW_values | update_normal_vectors);
       Vector<double>                       cell_rhs(fe.dofs_per_cell);
       std::vector<types::global_dof_index> local_dof_indices(fe.dofs_per_cell);
@@ -254,8 +255,8 @@ LevelSetOKZSolverAdvanceConcentration<dim>::advance_concentration_vmult(
               {
                 if (cell->face(face)->at_boundary())
                   {
-                    if (this->boundary->symmetry.find(cell->face(face)->boundary_id()) ==
-                        this->boundary->symmetry.end())
+                    if (this->boundary.symmetry.find(cell->face(face)->boundary_id()) ==
+                        this->boundary.symmetry.end())
                       {
                         fe_face_values.reinit(cell, face);
                         fe_face_values.get_function_gradients(src, local_gradients);
@@ -317,8 +318,6 @@ template <int dim>
 void
 LevelSetOKZSolverAdvanceConcentration<dim>::advance_concentration()
 {
-  TimerOutput::Scope timer(*this->timer, "LS advance concentration.");
-
   const auto &mapping     = *this->matrix_free.get_mapping_info().mapping;
   const auto &dof_handler = this->matrix_free.get_dof_handler(parameters.dof_index_ls);
   const auto &fe          = dof_handler.get_fe();
@@ -328,14 +327,14 @@ LevelSetOKZSolverAdvanceConcentration<dim>::advance_concentration()
     std::map<types::boundary_id, const Function<dim> *> dirichlet;
     Functions::ConstantFunction<dim>                    plus_func(1., 1);
     for (typename std::set<types::boundary_id>::const_iterator it =
-           this->boundary->fluid_type_plus.begin();
-         it != this->boundary->fluid_type_plus.end();
+           this->boundary.fluid_type_plus.begin();
+         it != this->boundary.fluid_type_plus.end();
          ++it)
       dirichlet[*it] = &plus_func;
     Functions::ConstantFunction<dim> minus_func(-1., 1);
     for (typename std::set<types::boundary_id>::const_iterator it =
-           this->boundary->fluid_type_minus.begin();
-         it != this->boundary->fluid_type_minus.end();
+           this->boundary.fluid_type_minus.begin();
+         it != this->boundary.fluid_type_minus.end();
          ++it)
       dirichlet[*it] = &minus_func;
 
@@ -381,7 +380,7 @@ LevelSetOKZSolverAdvanceConcentration<dim>::advance_concentration()
       FEFaceValues<dim> fe_face_values(
         mapping,
         fe,
-        this->matrix_free.get_face_quadrature(1 /*TODO???*/),
+        this->matrix_free.get_face_quadrature(parameters.quad_index),
         update_values | update_gradients | update_JxW_values | update_normal_vectors);
 
       Vector<double>                       cell_rhs(fe.dofs_per_cell);
@@ -401,8 +400,8 @@ LevelSetOKZSolverAdvanceConcentration<dim>::advance_concentration()
               {
                 if (cell->face(face)->at_boundary())
                   {
-                    if (this->boundary->symmetry.find(cell->face(face)->boundary_id()) ==
-                        this->boundary->symmetry.end())
+                    if (this->boundary.symmetry.find(cell->face(face)->boundary_id()) ==
+                        this->boundary.symmetry.end())
                       {
                         fe_face_values.reinit(cell, face);
                         fe_face_values.get_function_gradients(this->solution,
