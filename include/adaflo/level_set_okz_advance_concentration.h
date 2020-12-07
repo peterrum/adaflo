@@ -92,7 +92,6 @@ struct LevelSetOKZSolverAdvanceConcentrationBoundaryDescriptor
    * TODO
    */
   std::set<types::boundary_id> symmetry;
->>>>>>> 1e32e00ad51654f794b711013a006c52799140a0
 };
 
 template <int dim>
