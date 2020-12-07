@@ -262,7 +262,7 @@ LevelSetOKZSolver<dim>::initialize_data_structures()
   params.convection_stabilization   = this->parameters.convection_stabilization;
   params.do_iteration               = this->parameters.do_iteration;
   params.tol_nl_iteration           = this->parameters.tol_nl_iteration;
-  params.time_step_scheme           = this->parameters.time_step_scheme;
+  
   // set time stepping parameters of level set to correspond with the values from
   // Navier-Stokes
   // @todo
