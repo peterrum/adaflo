@@ -186,7 +186,7 @@ LevelSetOKZSolverAdvanceConcentration<dim>::local_advance_concentration_rhs(
           // compute right hand side
           vector_t old_value =
             this->time_stepping.weight_old() * ls_values_old.get_value(q);
-          if (this->time_stepping.scheme() == TimeStepping::bdf_2 &&
+          if (this->time_stepping.scheme() == TimeSteppingParameters::Scheme::bdf_2 &&
               this->time_stepping.step_no() > 1)
             old_value +=
               this->time_stepping.weight_old_old() * ls_values_old_old.get_value(q);

@@ -67,6 +67,10 @@ struct LevelSetOKZSolverAdvanceConcentrationParameter
    * TODO
    */
   double tol_nl_iteration;
+  /**
+   * TODO
+   */
+  TimeSteppingParameters time;
 };
 
 template <int dim>
@@ -91,7 +95,6 @@ public:
 
     const AffineConstraints<double> &                       constraints,
     const ConditionalOStream &                              pcout,
-    const TimeStepping &                                    time_stepping,
     std::shared_ptr<helpers::BoundaryDescriptor<dim>> &     boundary,
     const MatrixFree<dim> &                                 matrix_free,
     const std::shared_ptr<TimerOutput> &                    timer,
@@ -113,7 +116,7 @@ public:
     , constraints(constraints)
     , pcout(pcout)
     , timer(timer)
-    , time_stepping(time_stepping)
+    , time_stepping(parameters.time)
     , global_omega_diameter(global_omega_diameter)
     , cell_diameters(cell_diameters)
     , boundary(boundary)
@@ -175,7 +178,7 @@ private:
    */
   const ConditionalOStream &          pcout;         // [i]
   const std::shared_ptr<TimerOutput> &timer;         // [i]
-  const TimeStepping &                time_stepping; // [-] TODO
+  TimeStepping                        time_stepping; // [i]
 
   /**
    * Physics section
