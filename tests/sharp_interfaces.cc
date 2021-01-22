@@ -66,7 +66,7 @@ void
 create_surface_mesh(Triangulation<dim, spacedim> &tria)
 {
   GridGenerator::hyper_sphere(tria, Point<spacedim>(), 0.5);
-  tria.refine_global(4);
+  tria.refine_global(5);
 }
 
 template <int dim>
@@ -244,7 +244,9 @@ compute_force_vector_regularized(const MatrixFree<dim, double> &matrix_free,
   (void)normal_vector_field;
   (void)curvature_solution;
 
-  const auto level_set_as_heaviside = ls_solution;
+  auto level_set_as_heaviside = ls_solution;
+  level_set_as_heaviside.add(1.0);
+  level_set_as_heaviside *= 0.5;
 
   const double surface_tension_coefficient = 1.0;
 
@@ -279,12 +281,10 @@ compute_force_vector_regularized(const MatrixFree<dim, double> &matrix_free,
 
           for (unsigned int q_index = 0; q_index < surface_tension.n_q_points; ++q_index)
             {
-              surface_tension.submit_value(
-                surface_tension_coefficient *
-                  level_set.get_gradient(
-                    q_index) * // must be adopted --> level set be between zero and 1
-                  curvature.get_value(q_index),
-                q_index);
+              surface_tension.submit_value(surface_tension_coefficient *
+                                             level_set.get_gradient(q_index) *
+                                             curvature.get_value(q_index),
+                                           q_index);
             }
           surface_tension.integrate_scatter(true, false, force_rhs);
         }
@@ -413,7 +413,7 @@ template <int dim>
 void
 test()
 {
-  const unsigned int n_global_refinements = 5;
+  const unsigned int n_global_refinements = 6;
   const unsigned int fe_degree            = 1;
 
   Triangulation<dim> tria;
