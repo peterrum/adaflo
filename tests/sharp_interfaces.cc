@@ -22,6 +22,11 @@
 using VectorType      = LinearAlgebra::distributed::Vector<double>;
 using BlockVectorType = LinearAlgebra::distributed::BlockVector<double>;
 
+static const unsigned int dof_index_ls        = 0;
+static const unsigned int dof_index_normal    = 1;
+static const unsigned int dof_index_curvature = 2;
+static const unsigned int quad_index          = 0;
+
 template <int dim>
 void
 compute_ls_normal_curvature(const MatrixFree<dim, double> &  matrix_free,
@@ -43,18 +48,25 @@ compute_ls_normal_curvature(const MatrixFree<dim, double> &  matrix_free,
   VectorType      ls_system_rhs;
   VectorType      curvature_rhs;
 
+  matrix_free.initialize_dof_vector(ls_solution_update, dof_index_ls);
+  matrix_free.initialize_dof_vector(ls_system_rhs, dof_index_ls);
+  matrix_free.initialize_dof_vector(curvature_rhs, dof_index_curvature);
+
+  for (unsigned int i = 0; i < dim; ++i)
+    matrix_free.initialize_dof_vector(normal_vector_rhs.block(i));
+
   // TODO
   const double              dt                       = 0.01;
   const unsigned int        stab_steps               = 20;
   std::pair<double, double> last_concentration_range = {-1, +1};
   bool                      first_reinit_step        = true;
-  double                    epsilon; // TODO
+  double                    epsilon                  = 1.0;
 
   AlignedVector<VectorizedArray<double>> cell_diameters;
   double                                 minimal_edge_length;
   double                                 epsilon_used;
   compute_cell_diameters(
-    matrix_free, 0 /*TODO*/, cell_diameters, minimal_edge_length, epsilon_used);
+    matrix_free, dof_index_ls, cell_diameters, minimal_edge_length, epsilon_used);
 
   // preconditioner
   DiagonalPreconditioner<double> preconditioner;
@@ -67,8 +79,8 @@ compute_ls_normal_curvature(const MatrixFree<dim, double> &  matrix_free,
 
   initialize_projection_matrix(matrix_free,
                                constraints_normals,
-                               2 /*TODO*/,
-                               2 /*TODO*/,
+                               dof_index_ls,
+                               quad_index,
                                epsilon_used,
                                epsilon,
                                cell_diameters,
@@ -77,7 +89,13 @@ compute_ls_normal_curvature(const MatrixFree<dim, double> &  matrix_free,
 
   // normal operator
   LevelSetOKZSolverComputeNormalParameter nomral_parameter;
-  LevelSetOKZSolverComputeNormal<dim>     normal_operator(normal_vector_field,
+  nomral_parameter.dof_index_ls            = dof_index_ls;
+  nomral_parameter.dof_index_normal        = dof_index_normal;
+  nomral_parameter.quad_index              = quad_index;
+  nomral_parameter.epsilon                 = epsilon;
+  nomral_parameter.approximate_projections = false;
+
+  LevelSetOKZSolverComputeNormal<dim> normal_operator(normal_vector_field,
                                                       normal_vector_rhs,
                                                       ls_solution,
                                                       cell_diameters,
@@ -183,6 +201,18 @@ test()
   VectorType      curvature_solution;
   BlockVectorType force_vector_regularized(dim);
   BlockVectorType force_vector_sharp_interface(dim);
+
+  matrix_free.initialize_dof_vector(ls_solution, dof_index_ls);
+  matrix_free.initialize_dof_vector(curvature_solution, dof_index_curvature);
+
+  for (unsigned int i = 0; i < dim; ++i)
+    {
+      matrix_free.initialize_dof_vector(normal_vector_field.block(i), dof_index_normal);
+      matrix_free.initialize_dof_vector(force_vector_regularized.block(i),
+                                        dof_index_normal);
+      matrix_free.initialize_dof_vector(force_vector_sharp_interface.block(i),
+                                        dof_index_normal);
+    }
 
   // compute level-set, normal-vector, and curvature field
   compute_ls_normal_curvature(matrix_free,
