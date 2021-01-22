@@ -411,23 +411,27 @@ compute_force_vector_sharp_interface(const Triangulation<dim - 1, dim> &surface_
   AffineConstraints<double> constraints; // TODO: use the right ones
 
   FEPointEvaluation<1, dim> phi_curvature(mapping, dof_handler.get_fe());
-  FEPointEvaluation<1, dim> phi_normal_force(mapping, dof_handler.get_fe());
+
+  FESystem<dim>               fe_dim(dof_handler.get_fe(), dim);
+  FEPointEvaluation<dim, dim> phi_normal_force(mapping, fe_dim);
 
   Vector<double>                       buffer;
+  Vector<double>                       buffer_dim;
   std::vector<types::global_dof_index> local_dof_indices;
 
-  std::vector<double>         values_curvature;       // TODO: will not be needed
-  std::vector<Tensor<1, dim>> gradients_curvature;    //
-  std::vector<double>         values_normal_force;    //
-  std::vector<Tensor<1, dim>> gradients_normal_force; //
+  std::vector<double>         values_curvature;    // TODO: will not be needed
+  std::vector<Tensor<1, dim>> values_normal_force; //
 
   for (unsigned int i = 0; i < cells.size(); ++i)
     {
       typename DoFHandler<dim>::active_cell_iterator cell = {
         &dof_handler.get_triangulation(), cells[i].first, cells[i].second, &dof_handler};
 
-      local_dof_indices.resize(cell->get_fe().n_dofs_per_cell());
-      buffer.reinit(cell->get_fe().n_dofs_per_cell());
+      const unsigned int n_dofs_per_component = cell->get_fe().n_dofs_per_cell();
+
+      local_dof_indices.resize(n_dofs_per_component);
+      buffer.reinit(n_dofs_per_component);
+      buffer_dim.reinit(n_dofs_per_component * dim);
 
       cell->get_dof_indices(local_dof_indices);
 
@@ -447,8 +451,7 @@ compute_force_vector_sharp_interface(const Triangulation<dim - 1, dim> &surface_
       phi_curvature.evaluate(cell,
                              unit_points,
                              make_array_view(buffer),
-                             values_curvature,
-                             gradients_curvature);
+                             values_curvature);
 
       for (int i = 0; i < dim; ++i)
         {
@@ -456,25 +459,31 @@ compute_force_vector_sharp_interface(const Triangulation<dim - 1, dim> &surface_
                                      local_dof_indices.begin(),
                                      buffer.begin(),
                                      buffer.end());
+          for (unsigned int c = 0; c < n_dofs_per_component; ++c)
+            buffer_dim[c * dim + i] = buffer[c];
+        }
 
-          // TODO: update interface
-          phi_normal_force.evaluate(cell,
-                                    unit_points,
-                                    make_array_view(buffer),
-                                    values_normal_force,
-                                    gradients_normal_force);
+      // TODO: update interface
+      phi_normal_force.evaluate(cell,
+                                unit_points,
+                                make_array_view(buffer_dim),
+                                values_normal_force);
 
-          // TODO: update interface
-          for (unsigned int q = 0; q < n_points; ++q)
-            values_normal_force[q] *= values_curvature[q] * JxW[q];
+      // TODO: update interface
+      for (unsigned int q = 0; q < n_points; ++q)
+        values_normal_force[q] *=
+          values_curvature[q] * JxW[q] / values_normal_force[q].norm();
 
-          // TODO: update interface
-          phi_normal_force.integrate(cell,
-                                     unit_points,
-                                     make_array_view(buffer),
-                                     values_normal_force,
-                                     gradients_normal_force);
+      // TODO: update interface
+      phi_normal_force.integrate(cell,
+                                 unit_points,
+                                 make_array_view(buffer_dim),
+                                 values_normal_force);
 
+      for (int i = 0; i < dim; ++i)
+        {
+          for (unsigned int c = 0; c < n_dofs_per_component; ++c)
+            buffer[c] = buffer_dim[c * dim + i];
           constraints.distribute_local_to_global(buffer,
                                                  local_dof_indices,
                                                  force_vector.block(i));
