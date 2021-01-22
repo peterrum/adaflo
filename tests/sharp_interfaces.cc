@@ -342,24 +342,22 @@ collect_evaluation_points(const Triangulation<dim, spacedim> &     surface_mesh,
 
 template <int dim>
 void
-compute_force_vector_sharp_interface(const Mapping<dim - 1, dim> &      surface_mapping,
+compute_force_vector_sharp_interface(const Triangulation<dim - 1, dim> &surface_mesh,
+                                     const Mapping<dim - 1, dim> &      surface_mapping,
                                      const FiniteElement<dim - 1, dim> &surface_fe,
                                      const Quadrature<dim - 1> &        surface_quad,
-                                     const Triangulation<dim> &         tria,
                                      const Mapping<dim> &               mapping,
                                      const DoFHandler<dim> &            dof_handler,
-                                     const VectorType &                 ls_solution,
                                      const BlockVectorType &normal_vector_field,
                                      const VectorType &     curvature_solution,
                                      BlockVectorType &      force_vector)
 {
-  (void)ls_solution;
-
-  Triangulation<dim - 1, dim> surface_mesh;
-  create_surface_mesh(surface_mesh);
-
-  const auto info = collect_evaluation_points(
-    surface_mesh, surface_mapping, surface_fe, surface_quad, tria, mapping);
+  const auto info = collect_evaluation_points(surface_mesh,
+                                              surface_mapping,
+                                              surface_fe,
+                                              surface_quad,
+                                              dof_handler.get_triangulation(),
+                                              mapping);
 
   AffineConstraints<double> constraints;
 
@@ -519,20 +517,25 @@ test()
                                    curvature_solution,
                                    force_vector_regularized);
 
+  std::cout << force_vector_regularized.l2_norm() << std::endl;
+
   //  compute force vector with a share-interface approach
+  Triangulation<dim - 1, dim> surface_mesh;
+  create_surface_mesh(surface_mesh);
   MappingQ1<dim - 1, dim> surface_mapping;
   FE_Q<dim - 1, dim>      surface_fe(fe_degree);
   QGauss<dim - 1>         surface_quad(fe_degree + 1);
-  compute_force_vector_sharp_interface<dim>(surface_mapping,
+  compute_force_vector_sharp_interface<dim>(surface_mesh,
+                                            surface_mapping,
                                             surface_fe,
                                             surface_quad,
-                                            tria,
                                             mapping,
                                             dof_handler,
-                                            ls_solution,
                                             normal_vector_field,
                                             curvature_solution,
                                             force_vector_sharp_interface);
+
+  std::cout << force_vector_sharp_interface.l2_norm() << std::endl;
 
   // TODO: write computed vectors to Paraview
   {
