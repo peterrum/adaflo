@@ -82,20 +82,26 @@ compute_ls_normal_curvature(const MatrixFree<dim, double> &  matrix_free,
   matrix_free.initialize_dof_vector(curvature_rhs, dof_index_curvature);
 
   for (unsigned int i = 0; i < dim; ++i)
-    matrix_free.initialize_dof_vector(normal_vector_rhs.block(i));
+    matrix_free.initialize_dof_vector(normal_vector_rhs.block(i), dof_index_normal);
 
   // TODO
-  const double              dt                       = 0.01;
-  const unsigned int        stab_steps               = 20;
-  std::pair<double, double> last_concentration_range = {-1, +1};
-  bool                      first_reinit_step        = true;
-  double                    epsilon                  = 1.0;
+  const double              dt                         = 0.01;
+  const unsigned int        stab_steps                 = 20;
+  std::pair<double, double> last_concentration_range   = {-1, +1};
+  bool                      first_reinit_step          = true;
+  double                    epsilon                    = 1.5;
+  const unsigned int        concentration_subdivisions = 1;
 
   AlignedVector<VectorizedArray<double>> cell_diameters;
   double                                 minimal_edge_length;
   double                                 epsilon_used;
   compute_cell_diameters(
     matrix_free, dof_index_ls, cell_diameters, minimal_edge_length, epsilon_used);
+
+  pcout << "Mesh size (largest/smallest element length at finest level): " << epsilon_used
+        << " / " << minimal_edge_length << std::endl;
+
+  epsilon_used = epsilon / concentration_subdivisions * epsilon_used;
 
   // preconditioner
   DiagonalPreconditioner<double> preconditioner;
@@ -142,7 +148,17 @@ compute_ls_normal_curvature(const MatrixFree<dim, double> &  matrix_free,
   reinit_parameters.dof_index_ls     = dof_index_ls;
   reinit_parameters.dof_index_normal = dof_index_normal;
   reinit_parameters.quad_index       = quad_index;
-  reinit_parameters.do_iteration     = false;
+  reinit_parameters.do_iteration     = true;
+
+  reinit_parameters.time.time_step_scheme     = TimeSteppingParameters::Scheme::bdf_2;
+  reinit_parameters.time.start_time           = 0.0;
+  reinit_parameters.time.end_time             = dt;
+  reinit_parameters.time.time_step_size_start = dt;
+  reinit_parameters.time.time_stepping_cfl    = 1.0;
+  reinit_parameters.time.time_stepping_coef2  = 10;
+  reinit_parameters.time.time_step_tolerance  = 1.e-2;
+  reinit_parameters.time.time_step_size_max   = dt;
+  reinit_parameters.time.time_step_size_min   = dt;
 
   LevelSetOKZSolverReinitialization<dim> reinit(normal_vector_field,
                                                 cell_diameters,
@@ -167,7 +183,7 @@ compute_ls_normal_curvature(const MatrixFree<dim, double> &  matrix_free,
   parameters_curvature.quad_index              = quad_index;
   parameters_curvature.epsilon                 = epsilon;
   parameters_curvature.approximate_projections = false;
-  parameters_curvature.curvature_correction    = false;
+  parameters_curvature.curvature_correction    = true;
 
   LevelSetOKZSolverComputeCurvature<dim> curvature_operator(cell_diameters,
                                                             normal_vector_field,
@@ -183,9 +199,8 @@ compute_ls_normal_curvature(const MatrixFree<dim, double> &  matrix_free,
                                                             projection_matrix,
                                                             ilu_projection_matrix);
 
-  // set initial condition
-
   // perform reinitialization
+  constraints.set_zero(ls_solution);
   reinit.reinitialize(dt, stab_steps, 0, [&normal_operator](const bool fast) {
     normal_operator.compute_normal(fast);
   });
@@ -195,6 +210,11 @@ compute_ls_normal_curvature(const MatrixFree<dim, double> &  matrix_free,
 
   // compute curvature
   curvature_operator.compute_curvature();
+
+  constraints.distribute(ls_solution);
+  for (unsigned int i = 0; i < dim; ++i)
+    constraints_normals.distribute(normal_vector_field.block(i));
+  constraints_curvature.distribute(curvature_solution);
 }
 
 
@@ -233,7 +253,7 @@ template <int dim>
 void
 test()
 {
-  const unsigned int n_global_refinements = 3;
+  const unsigned int n_global_refinements = 5;
   const unsigned int fe_degree            = 1;
 
   Triangulation<dim> tria;
@@ -249,33 +269,38 @@ test()
   AffineConstraints<double> constraints, constraints_normals, hanging_node_constraints,
     constraints_curvature;
 
+  /** not needed: why?
   VectorTools::interpolate_boundary_values(
     mapping, dof_handler, 0, Functions::ConstantFunction<dim>(-1.0), constraints);
-  constraints.close();
 
   VectorTools::interpolate_boundary_values(
     mapping, dof_handler, 0, Functions::ConstantFunction<dim>(0.0), constraints_normals);
-  constraints_normals.close();
 
   VectorTools::interpolate_boundary_values(mapping,
                                            dof_handler,
                                            0,
                                            Functions::ConstantFunction<dim>(0.0),
                                            constraints_curvature);
-  constraints_curvature.close();
+   */
 
+  constraints.close();
+  constraints_curvature.close();
+  constraints_normals.close();
   hanging_node_constraints.close();
 
   QGauss<1> quad(fe_degree + 1);
 
   MatrixFree<dim, double> matrix_free;
 
-  const std::vector<const DoFHandler<dim> *>           dof_handlers{&dof_handler,
+  const std::vector<const DoFHandler<dim> *> dof_handlers{&dof_handler,
                                                           &dof_handler,
                                                           &dof_handler};
+
   const std::vector<const AffineConstraints<double> *> all_constraints{
     &constraints, &constraints_normals, &constraints_curvature};
+
   const std::vector<Quadrature<1>> quadratures{quad};
+
   matrix_free.reinit(mapping, dof_handlers, all_constraints, quadratures);
 
   // vectors
@@ -299,18 +324,6 @@ test()
 
   // initialize level-set
   VectorTools::interpolate(mapping, dof_handler, InitialValuesLS<dim>(), ls_solution);
-
-  {
-    DataOutBase::VtkFlags flags;
-    flags.write_higher_order_cells = true;
-
-    DataOut<dim> data_out;
-    data_out.set_flags(flags);
-    data_out.attach_dof_handler(dof_handler);
-    data_out.add_data_vector(dof_handler, ls_solution, "solution");
-    data_out.build_patches(mapping, fe_degree + 1);
-    data_out.write_vtu_with_pvtu_record("./", "result", 0, MPI_COMM_WORLD);
-  }
 
   // compute level-set, normal-vector, and curvature field
   compute_ls_normal_curvature(matrix_free,
@@ -337,6 +350,24 @@ test()
                                        force_vector_sharp_interface);
 
   // TODO: write computed vectors to Paraview
+  {
+    DataOutBase::VtkFlags flags;
+    flags.write_higher_order_cells = true;
+
+    DataOut<dim> data_out;
+    data_out.set_flags(flags);
+    data_out.attach_dof_handler(dof_handler);
+    data_out.add_data_vector(dof_handler, ls_solution, "ls");
+    data_out.add_data_vector(dof_handler, curvature_solution, "curvature");
+
+    for (unsigned int i = 0; i < dim; ++i)
+      data_out.add_data_vector(dof_handler,
+                               normal_vector_field.block(0),
+                               "normal_" + std::to_string(i));
+
+    data_out.build_patches(mapping, fe_degree + 1);
+    data_out.write_vtu_with_pvtu_record("./", "result", 0, MPI_COMM_WORLD);
+  }
 }
 
 
