@@ -415,8 +415,8 @@ compute_force_vector_sharp_interface(const Triangulation<dim - 1, dim> &surface_
   FESystem<dim>               fe_dim(dof_handler.get_fe(), dim);
   FEPointEvaluation<dim, dim> phi_normal_force(mapping, fe_dim);
 
-  Vector<double>                       buffer;
-  Vector<double>                       buffer_dim;
+  std::vector<double>                  buffer;
+  std::vector<double>                  buffer_dim;
   std::vector<types::global_dof_index> local_dof_indices;
 
   std::vector<double>         values_curvature;    // TODO: will not be needed
@@ -430,8 +430,8 @@ compute_force_vector_sharp_interface(const Triangulation<dim - 1, dim> &surface_
       const unsigned int n_dofs_per_component = cell->get_fe().n_dofs_per_cell();
 
       local_dof_indices.resize(n_dofs_per_component);
-      buffer.reinit(n_dofs_per_component);
-      buffer_dim.reinit(n_dofs_per_component * dim);
+      buffer.resize(n_dofs_per_component);
+      buffer_dim.resize(n_dofs_per_component * dim);
 
       cell->get_dof_indices(local_dof_indices);
 
@@ -443,16 +443,19 @@ compute_force_vector_sharp_interface(const Triangulation<dim - 1, dim> &surface_
       values_curvature.resize(unit_points.size());    // TODO: will not be needed
       values_normal_force.resize(unit_points.size()); //
 
+      // gather curvature
       constraints.get_dof_values(curvature_solution,
                                  local_dof_indices.begin(),
                                  buffer.begin(),
                                  buffer.end());
 
+      // evaluate curvature
       phi_curvature.evaluate(cell,
                              unit_points,
                              make_array_view(buffer),
                              values_curvature);
 
+      // gather normal
       for (int i = 0; i < dim; ++i)
         {
           constraints.get_dof_values(normal_vector_field.block(i),
@@ -463,23 +466,18 @@ compute_force_vector_sharp_interface(const Triangulation<dim - 1, dim> &surface_
             buffer_dim[c * dim + i] = buffer[c];
         }
 
-      // TODO: update interface
-      phi_normal_force.evaluate(cell,
-                                unit_points,
-                                make_array_view(buffer_dim),
-                                values_normal_force);
+      // evaluate normal
+      phi_normal_force.evaluate(cell, unit_points, buffer_dim, values_normal_force);
 
-      // TODO: update interface
+      // quadrature loop
       for (unsigned int q = 0; q < n_points; ++q)
         values_normal_force[q] *=
           values_curvature[q] * JxW[q] / values_normal_force[q].norm();
 
-      // TODO: update interface
-      phi_normal_force.integrate(cell,
-                                 unit_points,
-                                 make_array_view(buffer_dim),
-                                 values_normal_force);
+      // integrate
+      phi_normal_force.integrate(cell, unit_points, buffer_dim, values_normal_force);
 
+      // scatter
       for (int i = 0; i < dim; ++i)
         {
           for (unsigned int c = 0; c < n_dofs_per_component; ++c)
