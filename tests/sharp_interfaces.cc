@@ -15,9 +15,12 @@
 
 #include <deal.II/base/mpi.h>
 
+#include <deal.II/fe/fe_point_evaluation.h>
 #include <deal.II/fe/fe_q.h>
 
 #include <deal.II/grid/grid_generator.h>
+#include <deal.II/grid/grid_tools.h>
+#include <deal.II/grid/grid_tools_cache.h>
 
 #include <deal.II/numerics/data_out.h>
 #include <deal.II/numerics/vector_tools.h>
@@ -55,6 +58,14 @@ public:
     return (radius - p.distance(origin) > 0.0) ? +1.0 : -1.0;
   }
 };
+
+template <int dim, int spacedim>
+void
+create_surface_mesh(Triangulation<dim, spacedim> &tria)
+{
+  GridGenerator::hyper_sphere(tria, Point<spacedim>(), 0.5);
+  tria.refine_global(4);
+}
 
 template <int dim>
 void
@@ -235,17 +246,117 @@ compute_force_vector_regularized(const MatrixFree<dim, double> &matrix_free,
 
 template <int dim>
 void
-compute_force_vector_sharp_interface(const MatrixFree<dim, double> &matrix_free,
-                                     const VectorType &             ls_solution,
-                                     const BlockVectorType &        normal_vector_field,
-                                     const VectorType &             curvature_solution,
-                                     BlockVectorType &              force_vector)
+compute_force_vector_sharp_interface(const Mapping<dim - 1, dim> &      surface_mapping,
+                                     const FiniteElement<dim - 1, dim> &surface_fe,
+                                     const Quadrature<dim - 1> &        surface_quad,
+                                     const Triangulation<dim> &         tria,
+                                     const Mapping<dim> &               mapping,
+                                     const DoFHandler<dim> &            dof_handler,
+                                     const VectorType &                 ls_solution,
+                                     const BlockVectorType &normal_vector_field,
+                                     const VectorType &     curvature_solution,
+                                     BlockVectorType &      force_vector)
 {
-  (void)matrix_free;
   (void)ls_solution;
-  (void)normal_vector_field;
-  (void)curvature_solution;
-  (void)force_vector;
+
+  Triangulation<dim - 1, dim> surface_mesh;
+  create_surface_mesh(surface_mesh);
+
+  std::vector<std::tuple<Point<dim>, double, std::pair<int, int>>> info;
+
+  const std::vector<bool>          marked_vertices;
+  const GridTools::Cache<dim, dim> cache(tria, mapping);
+  const double                     tolerance = 1e-10;
+  auto                             cell_hint = tria.begin_active();
+
+  FEValues<dim - 1, dim> fe_eval(surface_mapping,
+                                 surface_fe,
+                                 surface_quad,
+                                 update_quadrature_points | update_JxW_values);
+
+  for (const auto &cell : surface_mesh.active_cell_iterators())
+    {
+      fe_eval.reinit(cell);
+
+      for (const auto q : fe_eval.quadrature_point_indices())
+        {
+          const auto cell_and_reference_coordinate =
+            GridTools::find_active_cell_around_point(
+              cache, fe_eval.quadrature_point(q), cell_hint, marked_vertices, tolerance);
+
+          cell_hint = cell_and_reference_coordinate.first;
+
+          info.emplace_back(
+            cell_and_reference_coordinate.second,
+            fe_eval.JxW(q),
+            std::pair<int, int>(cell_and_reference_coordinate.first->level(),
+                                cell_and_reference_coordinate.first->index()));
+        }
+    }
+
+  AffineConstraints<double> constraints;
+
+  FEPointEvaluation<1, dim> phi_curvature(mapping, dof_handler.get_fe());
+  FEPointEvaluation<1, dim> phi_normal_force(mapping, dof_handler.get_fe());
+
+  Vector<double>              solution_values;
+  std::vector<double>         values_curvature;
+  std::vector<Tensor<1, dim>> gradients_curvature;
+  std::vector<double>         values_normal_force;
+  std::vector<Tensor<1, dim>> gradients_normal_force;
+
+  std::vector<types::global_dof_index> local_dof_indices;
+
+  for (const auto &entry : info)
+    {
+      typename DoFHandler<dim>::active_cell_iterator cell = {
+        &dof_handler.get_triangulation(),
+        std::get<2>(entry).first,
+        std::get<2>(entry).second,
+        &dof_handler};
+
+      local_dof_indices.resize(cell->get_fe().dofs_per_cell);
+      cell->get_dof_indices(local_dof_indices);
+
+      const ArrayView<const Point<dim>> unit_points(&std::get<0>(entry), 1);
+      const ArrayView<const double>     JxW(&std::get<1>(entry), 1);
+      solution_values.reinit(
+        dof_handler.get_fe(cell->active_fe_index()).n_dofs_per_cell());
+      values_curvature.resize(unit_points.size());
+      values_normal_force.resize(unit_points.size());
+
+      cell->get_dof_values(curvature_solution, solution_values);
+
+      phi_curvature.evaluate(cell,
+                             unit_points,
+                             make_array_view(solution_values),
+                             values_curvature,
+                             gradients_curvature);
+
+      const unsigned int n_points = unit_points.size();
+
+      for (int i = 0; i < dim; ++i)
+        {
+          cell->get_dof_values(normal_vector_field.block(i), solution_values);
+
+          phi_normal_force.evaluate(cell,
+                                    unit_points,
+                                    make_array_view(solution_values),
+                                    values_normal_force,
+                                    gradients_normal_force);
+
+          for (unsigned int q = 0; q < n_points; ++q)
+            values_normal_force[q] *= values_curvature[q] * JxW[q];
+
+          phi_normal_force.integrate(cell,
+                                     unit_points,
+                                     make_array_view(solution_values),
+                                     values_normal_force,
+                                     gradients_normal_force);
+
+          cell->distribute_local_to_global(solution_values, force_vector.block(i));
+        }
+    }
 }
 
 
@@ -343,11 +454,19 @@ test()
                                    force_vector_regularized);
 
   //  compute force vector with a share-interface approach
-  compute_force_vector_sharp_interface(matrix_free,
-                                       ls_solution,
-                                       normal_vector_field,
-                                       curvature_solution,
-                                       force_vector_sharp_interface);
+  MappingQ1<dim - 1, dim> surface_mapping;
+  FE_Q<dim - 1, dim>      surface_fe(fe_degree);
+  QGauss<dim - 1>         surface_quad(fe_degree + 1);
+  compute_force_vector_sharp_interface<dim>(surface_mapping,
+                                            surface_fe,
+                                            surface_quad,
+                                            tria,
+                                            mapping,
+                                            dof_handler,
+                                            ls_solution,
+                                            normal_vector_field,
+                                            curvature_solution,
+                                            force_vector_sharp_interface);
 
   // TODO: write computed vectors to Paraview
   {
@@ -362,8 +481,13 @@ test()
 
     for (unsigned int i = 0; i < dim; ++i)
       data_out.add_data_vector(dof_handler,
-                               normal_vector_field.block(0),
+                               normal_vector_field.block(i),
                                "normal_" + std::to_string(i));
+
+    for (unsigned int i = 0; i < dim; ++i)
+      data_out.add_data_vector(dof_handler,
+                               force_vector_sharp_interface.block(i),
+                               "force_si_" + std::to_string(i));
 
     data_out.build_patches(mapping, fe_degree + 1);
     data_out.write_vtu_with_pvtu_record("./", "result", 0, MPI_COMM_WORLD);
