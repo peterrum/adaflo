@@ -140,6 +140,37 @@ compute_ls_normal_curvature(const MatrixFree<dim, double> &  matrix_free,
 
 template <int dim>
 void
+compute_force_vector_regularized(const MatrixFree<dim, double> &matrix_free,
+                                 const VectorType &             ls_solution,
+                                 const BlockVectorType &        normal_vector_field,
+                                 const VectorType &             curvature_solution,
+                                 BlockVectorType &              force_vector)
+{
+  (void)matrix_free;
+  (void)ls_solution;
+  (void)normal_vector_field;
+  (void)curvature_solution;
+  (void)force_vector;
+}
+
+template <int dim>
+void
+compute_force_vector_sharp_interface(const MatrixFree<dim, double> &matrix_free,
+                                     const VectorType &             ls_solution,
+                                     const BlockVectorType &        normal_vector_field,
+                                     const VectorType &             curvature_solution,
+                                     BlockVectorType &              force_vector)
+{
+  (void)matrix_free;
+  (void)ls_solution;
+  (void)normal_vector_field;
+  (void)curvature_solution;
+  (void)force_vector;
+}
+
+
+template <int dim>
+void
 test()
 {
   AffineConstraints<double> constraints, constraints_normals, hanging_node_constraints,
@@ -150,7 +181,10 @@ test()
   BlockVectorType normal_vector_field(dim);
   VectorType      ls_solution;
   VectorType      curvature_solution;
+  BlockVectorType force_vector_regularized(dim);
+  BlockVectorType force_vector_sharp_interface(dim);
 
+  // compute level-set, normal-vector, and curvature field
   compute_ls_normal_curvature(matrix_free,
                               constraints,
                               constraints_normals,
@@ -159,6 +193,22 @@ test()
                               normal_vector_field,
                               ls_solution,
                               curvature_solution);
+
+  //  compute force vector with a regularized approach
+  compute_force_vector_regularized(matrix_free,
+                                   ls_solution,
+                                   normal_vector_field,
+                                   curvature_solution,
+                                   force_vector_regularized);
+
+  //  compute force vector with a share-interface approach
+  compute_force_vector_sharp_interface(matrix_free,
+                                       ls_solution,
+                                       normal_vector_field,
+                                       curvature_solution,
+                                       force_vector_sharp_interface);
+
+  // TODO: write computed vectors to Paraview
 }
 
 
