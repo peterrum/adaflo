@@ -294,35 +294,28 @@ compute_force_vector_regularized(const MatrixFree<dim, double> &matrix_free,
     true);
 }
 
-template <int dim>
-void
-compute_force_vector_sharp_interface(const Mapping<dim - 1, dim> &      surface_mapping,
-                                     const FiniteElement<dim - 1, dim> &surface_fe,
-                                     const Quadrature<dim - 1> &        surface_quad,
-                                     const Triangulation<dim> &         tria,
-                                     const Mapping<dim> &               mapping,
-                                     const DoFHandler<dim> &            dof_handler,
-                                     const VectorType &                 ls_solution,
-                                     const BlockVectorType &normal_vector_field,
-                                     const VectorType &     curvature_solution,
-                                     BlockVectorType &      force_vector)
+
+
+template <int dim, int spacedim>
+std::vector<std::tuple<Point<spacedim>, double, std::pair<int, int>>>
+collect_evaluation_points(const Triangulation<dim, spacedim> &     surface_mesh,
+                          const Mapping<dim, spacedim> &           surface_mapping,
+                          const FiniteElement<dim, spacedim> &     surface_fe,
+                          const Quadrature<dim> &                  surface_quad,
+                          const Triangulation<spacedim, spacedim> &tria,
+                          const Mapping<spacedim, spacedim> &      mapping)
 {
-  (void)ls_solution;
+  std::vector<std::tuple<Point<spacedim>, double, std::pair<int, int>>> info;
 
-  Triangulation<dim - 1, dim> surface_mesh;
-  create_surface_mesh(surface_mesh);
+  const std::vector<bool>                    marked_vertices;
+  const GridTools::Cache<spacedim, spacedim> cache(tria, mapping);
+  const double                               tolerance = 1e-10;
+  auto                                       cell_hint = tria.begin_active();
 
-  std::vector<std::tuple<Point<dim>, double, std::pair<int, int>>> info;
-
-  const std::vector<bool>          marked_vertices;
-  const GridTools::Cache<dim, dim> cache(tria, mapping);
-  const double                     tolerance = 1e-10;
-  auto                             cell_hint = tria.begin_active();
-
-  FEValues<dim - 1, dim> fe_eval(surface_mapping,
-                                 surface_fe,
-                                 surface_quad,
-                                 update_quadrature_points | update_JxW_values);
+  FEValues<dim, spacedim> fe_eval(surface_mapping,
+                                  surface_fe,
+                                  surface_quad,
+                                  update_quadrature_points | update_JxW_values);
 
   for (const auto &cell : surface_mesh.active_cell_iterators())
     {
@@ -343,6 +336,30 @@ compute_force_vector_sharp_interface(const Mapping<dim - 1, dim> &      surface_
                                 cell_and_reference_coordinate.first->index()));
         }
     }
+
+  return info;
+}
+
+template <int dim>
+void
+compute_force_vector_sharp_interface(const Mapping<dim - 1, dim> &      surface_mapping,
+                                     const FiniteElement<dim - 1, dim> &surface_fe,
+                                     const Quadrature<dim - 1> &        surface_quad,
+                                     const Triangulation<dim> &         tria,
+                                     const Mapping<dim> &               mapping,
+                                     const DoFHandler<dim> &            dof_handler,
+                                     const VectorType &                 ls_solution,
+                                     const BlockVectorType &normal_vector_field,
+                                     const VectorType &     curvature_solution,
+                                     BlockVectorType &      force_vector)
+{
+  (void)ls_solution;
+
+  Triangulation<dim - 1, dim> surface_mesh;
+  create_surface_mesh(surface_mesh);
+
+  const auto info = collect_evaluation_points(
+    surface_mesh, surface_mapping, surface_fe, surface_quad, tria, mapping);
 
   AffineConstraints<double> constraints;
 
