@@ -19,6 +19,7 @@
 
 #include <deal.II/grid/grid_generator.h>
 
+#include <deal.II/numerics/data_out.h>
 #include <deal.II/numerics/vector_tools.h>
 
 #include <adaflo/level_set_okz_compute_curvature.h>
@@ -34,6 +35,26 @@ static const unsigned int dof_index_ls        = 0;
 static const unsigned int dof_index_normal    = 1;
 static const unsigned int dof_index_curvature = 2;
 static const unsigned int quad_index          = 0;
+
+template <int dim>
+class InitialValuesLS : public Function<dim>
+{
+public:
+  InitialValuesLS()
+    : Function<dim>(1, 0)
+  {}
+
+  double
+  value(const Point<dim> &p, const unsigned int component) const
+  {
+    (void)component;
+    AssertDimension(component, 0);
+
+    const double radius = 0.5;
+    Point<dim>   origin;
+    return (radius - p.distance(origin) > 0.0) ? +1.0 : -1.0;
+  }
+};
 
 template <int dim>
 void
@@ -277,6 +298,19 @@ test()
     }
 
   // initialize level-set
+  VectorTools::interpolate(mapping, dof_handler, InitialValuesLS<dim>(), ls_solution);
+
+  {
+    DataOutBase::VtkFlags flags;
+    flags.write_higher_order_cells = true;
+
+    DataOut<dim> data_out;
+    data_out.set_flags(flags);
+    data_out.attach_dof_handler(dof_handler);
+    data_out.add_data_vector(dof_handler, ls_solution, "solution");
+    data_out.build_patches(mapping, fe_degree + 1);
+    data_out.write_vtu_with_pvtu_record("./", "result", 0, MPI_COMM_WORLD);
+  }
 
   // compute level-set, normal-vector, and curvature field
   compute_ls_normal_curvature(matrix_free,
