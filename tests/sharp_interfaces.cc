@@ -349,7 +349,7 @@ compute_force_vector_sharp_interface(const Mapping<dim - 1, dim> &      surface_
   FEPointEvaluation<1, dim> phi_curvature(mapping, dof_handler.get_fe());
   FEPointEvaluation<1, dim> phi_normal_force(mapping, dof_handler.get_fe());
 
-  Vector<double>              solution_values;
+  Vector<double>              buffer;
   std::vector<double>         values_curvature;
   std::vector<Tensor<1, dim>> gradients_curvature;
   std::vector<double>         values_normal_force;
@@ -370,28 +370,27 @@ compute_force_vector_sharp_interface(const Mapping<dim - 1, dim> &      surface_
 
       const ArrayView<const Point<dim>> unit_points(&std::get<0>(entry), 1);
       const ArrayView<const double>     JxW(&std::get<1>(entry), 1);
-      solution_values.reinit(
-        dof_handler.get_fe(cell->active_fe_index()).n_dofs_per_cell());
+      buffer.reinit(dof_handler.get_fe(cell->active_fe_index()).n_dofs_per_cell());
       values_curvature.resize(unit_points.size());
       values_normal_force.resize(unit_points.size());
 
-      cell->get_dof_values(curvature_solution, solution_values);
+      const unsigned int n_points = unit_points.size();
+
+      cell->get_dof_values(curvature_solution, buffer);
 
       phi_curvature.evaluate(cell,
                              unit_points,
-                             make_array_view(solution_values),
+                             make_array_view(buffer),
                              values_curvature,
                              gradients_curvature);
 
-      const unsigned int n_points = unit_points.size();
-
       for (int i = 0; i < dim; ++i)
         {
-          cell->get_dof_values(normal_vector_field.block(i), solution_values);
+          cell->get_dof_values(normal_vector_field.block(i), buffer);
 
           phi_normal_force.evaluate(cell,
                                     unit_points,
-                                    make_array_view(solution_values),
+                                    make_array_view(buffer),
                                     values_normal_force,
                                     gradients_normal_force);
 
@@ -400,11 +399,11 @@ compute_force_vector_sharp_interface(const Mapping<dim - 1, dim> &      surface_
 
           phi_normal_force.integrate(cell,
                                      unit_points,
-                                     make_array_view(solution_values),
+                                     make_array_view(buffer),
                                      values_normal_force,
                                      gradients_normal_force);
 
-          cell->distribute_local_to_global(solution_values, force_vector.block(i));
+          cell->distribute_local_to_global(buffer, force_vector.block(i));
         }
     }
 }
