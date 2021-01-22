@@ -13,6 +13,14 @@
 //
 // --------------------------------------------------------------------------
 
+#include <deal.II/base/mpi.h>
+
+#include <deal.II/fe/fe_q.h>
+
+#include <deal.II/grid/grid_generator.h>
+
+#include <deal.II/numerics/vector_tools.h>
+
 #include <adaflo/level_set_okz_compute_curvature.h>
 #include <adaflo/level_set_okz_compute_normal.h>
 #include <adaflo/level_set_okz_preconditioner.h>
@@ -72,7 +80,7 @@ compute_ls_normal_curvature(const MatrixFree<dim, double> &  matrix_free,
   DiagonalPreconditioner<double> preconditioner;
 
   initialize_mass_matrix_diagonal(
-    matrix_free, hanging_node_constraints, 2, 2, preconditioner);
+    matrix_free, hanging_node_constraints, dof_index_ls, quad_index, preconditioner);
 
   auto projection_matrix     = std::make_shared<BlockMatrixExtension>();
   auto ilu_projection_matrix = std::make_shared<BlockILUExtension>();
@@ -110,7 +118,12 @@ compute_ls_normal_curvature(const MatrixFree<dim, double> &  matrix_free,
 
   // reinitialization operator
   LevelSetOKZSolverReinitializationParameter reinit_parameters;
-  LevelSetOKZSolverReinitialization<dim>     reinit(normal_vector_field,
+  reinit_parameters.dof_index_ls     = dof_index_ls;
+  reinit_parameters.dof_index_normal = dof_index_normal;
+  reinit_parameters.quad_index       = quad_index;
+  reinit_parameters.do_iteration     = false;
+
+  LevelSetOKZSolverReinitialization<dim> reinit(normal_vector_field,
                                                 cell_diameters,
                                                 epsilon_used,
                                                 minimal_edge_length,
@@ -127,7 +140,15 @@ compute_ls_normal_curvature(const MatrixFree<dim, double> &  matrix_free,
 
   // curvature operator
   LevelSetOKZSolverComputeCurvatureParameter parameters_curvature;
-  LevelSetOKZSolverComputeCurvature<dim>     curvature_operator(cell_diameters,
+  parameters_curvature.dof_index_ls            = dof_index_ls;
+  parameters_curvature.dof_index_curvature     = dof_index_curvature;
+  parameters_curvature.dof_index_normal        = dof_index_normal;
+  parameters_curvature.quad_index              = quad_index;
+  parameters_curvature.epsilon                 = epsilon;
+  parameters_curvature.approximate_projections = false;
+  parameters_curvature.curvature_correction    = false;
+
+  LevelSetOKZSolverComputeCurvature<dim> curvature_operator(cell_diameters,
                                                             normal_vector_field,
                                                             constraints_curvature,
                                                             constraints,
@@ -191,9 +212,50 @@ template <int dim>
 void
 test()
 {
+  const unsigned int n_global_refinements = 3;
+  const unsigned int fe_degree            = 1;
+
+  Triangulation<dim> tria;
+  GridGenerator::hyper_cube(tria, -1.0, +1.0);
+  tria.refine_global(n_global_refinements);
+
+  FE_Q<dim>       fe(fe_degree);
+  DoFHandler<dim> dof_handler(tria);
+  dof_handler.distribute_dofs(fe);
+
+  MappingQ1<dim> mapping;
+
   AffineConstraints<double> constraints, constraints_normals, hanging_node_constraints,
     constraints_curvature;
+
+  VectorTools::interpolate_boundary_values(
+    mapping, dof_handler, 0, Functions::ConstantFunction<dim>(-1.0), constraints);
+  constraints.close();
+
+  VectorTools::interpolate_boundary_values(
+    mapping, dof_handler, 0, Functions::ConstantFunction<dim>(0.0), constraints_normals);
+  constraints_normals.close();
+
+  VectorTools::interpolate_boundary_values(mapping,
+                                           dof_handler,
+                                           0,
+                                           Functions::ConstantFunction<dim>(0.0),
+                                           constraints_curvature);
+  constraints_curvature.close();
+
+  hanging_node_constraints.close();
+
+  QGauss<1> quad(fe_degree + 1);
+
   MatrixFree<dim, double> matrix_free;
+
+  const std::vector<const DoFHandler<dim> *>           dof_handlers{&dof_handler,
+                                                          &dof_handler,
+                                                          &dof_handler};
+  const std::vector<const AffineConstraints<double> *> all_constraints{
+    &constraints, &constraints_normals, &constraints_curvature};
+  const std::vector<Quadrature<1>> quadratures{quad};
+  matrix_free.reinit(mapping, dof_handlers, all_constraints, quadratures);
 
   // vectors
   BlockVectorType normal_vector_field(dim);
@@ -213,6 +275,8 @@ test()
       matrix_free.initialize_dof_vector(force_vector_sharp_interface.block(i),
                                         dof_index_normal);
     }
+
+  // initialize level-set
 
   // compute level-set, normal-vector, and curvature field
   compute_ls_normal_curvature(matrix_free,
@@ -244,7 +308,9 @@ test()
 
 
 int
-main()
+main(int argc, char **argv)
 {
+  Utilities::MPI::MPI_InitFinalize mpi(argc, argv, 1);
+
   test<2>();
 }
