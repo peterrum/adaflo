@@ -297,7 +297,10 @@ compute_force_vector_regularized(const MatrixFree<dim, double> &matrix_free,
 
 
 template <int dim, int spacedim>
-std::vector<std::tuple<Point<spacedim>, double, std::pair<int, int>>>
+std::tuple<std::vector<std::pair<int, int>>,
+           std::vector<unsigned int>,
+           std::vector<double>,
+           std::vector<Point<spacedim>>>
 collect_evaluation_points(const Triangulation<dim, spacedim> &     surface_mesh,
                           const Mapping<dim, spacedim> &           surface_mapping,
                           const FiniteElement<dim, spacedim> &     surface_fe,
@@ -375,7 +378,7 @@ collect_evaluation_points(const Triangulation<dim, spacedim> &     surface_mesh,
     }
   ptrs.push_back(weights.size());
 
-  return info;
+  return {cells, ptrs, weights, points};
 }
 
 template <int dim>
@@ -390,12 +393,13 @@ compute_force_vector_sharp_interface(const Triangulation<dim - 1, dim> &surface_
                                      const VectorType &     curvature_solution,
                                      BlockVectorType &      force_vector)
 {
-  const auto info = collect_evaluation_points(surface_mesh,
-                                              surface_mapping,
-                                              surface_fe,
-                                              surface_quad,
-                                              dof_handler.get_triangulation(),
-                                              mapping);
+  const auto [cells, ptrs, weights, points] =
+    collect_evaluation_points(surface_mesh,
+                              surface_mapping,
+                              surface_fe,
+                              surface_quad,
+                              dof_handler.get_triangulation(),
+                              mapping);
 
   AffineConstraints<double> constraints;
 
@@ -410,24 +414,21 @@ compute_force_vector_sharp_interface(const Triangulation<dim - 1, dim> &surface_
 
   std::vector<types::global_dof_index> local_dof_indices;
 
-  for (const auto &entry : info)
+  for (unsigned int i = 0; i < cells.size(); ++i)
     {
       typename DoFHandler<dim>::active_cell_iterator cell = {
-        &dof_handler.get_triangulation(),
-        std::get<2>(entry).first,
-        std::get<2>(entry).second,
-        &dof_handler};
+        &dof_handler.get_triangulation(), cells[i].first, cells[i].second, &dof_handler};
 
       local_dof_indices.resize(cell->get_fe().dofs_per_cell);
       cell->get_dof_indices(local_dof_indices);
 
-      const ArrayView<const Point<dim>> unit_points(&std::get<0>(entry), 1);
-      const ArrayView<const double>     JxW(&std::get<1>(entry), 1);
+      const unsigned int n_points = ptrs[i + 1] - ptrs[i];
+
+      const ArrayView<const Point<dim>> unit_points(points.data() + ptrs[i], n_points);
+      const ArrayView<const double>     JxW(weights.data() + ptrs[i], n_points);
       buffer.reinit(dof_handler.get_fe(cell->active_fe_index()).n_dofs_per_cell());
       values_curvature.resize(unit_points.size());
       values_normal_force.resize(unit_points.size());
-
-      const unsigned int n_points = unit_points.size();
 
       cell->get_dof_values(curvature_solution, buffer);
 
