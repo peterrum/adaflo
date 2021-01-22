@@ -393,6 +393,9 @@ compute_force_vector_sharp_interface(const Triangulation<dim - 1, dim> &surface_
                                      const VectorType &     curvature_solution,
                                      BlockVectorType &      force_vector)
 {
+  // step 1) collect all locally-relevant surface quadrature points (cell, reference-cell
+  // position,
+  //  quadrature weight)
   const auto [cells, ptrs, weights, points] =
     collect_evaluation_points(surface_mesh,
                               surface_mapping,
@@ -401,36 +404,45 @@ compute_force_vector_sharp_interface(const Triangulation<dim - 1, dim> &surface_
                               dof_handler.get_triangulation(),
                               mapping);
 
-  AffineConstraints<double> constraints;
+  // step 2) loop over all cells and evaluate curvature and normal in the cell-local
+  // quadrature points
+  //   and test with all test functions of the cell
+
+  AffineConstraints<double> constraints; // TODO: use the right ones
 
   FEPointEvaluation<1, dim> phi_curvature(mapping, dof_handler.get_fe());
   FEPointEvaluation<1, dim> phi_normal_force(mapping, dof_handler.get_fe());
 
-  Vector<double>              buffer;
-  std::vector<double>         values_curvature;
-  std::vector<Tensor<1, dim>> gradients_curvature;
-  std::vector<double>         values_normal_force;
-  std::vector<Tensor<1, dim>> gradients_normal_force;
-
+  Vector<double>                       buffer;
   std::vector<types::global_dof_index> local_dof_indices;
+
+  std::vector<double>         values_curvature;       // TODO: will not be needed
+  std::vector<Tensor<1, dim>> gradients_curvature;    //
+  std::vector<double>         values_normal_force;    //
+  std::vector<Tensor<1, dim>> gradients_normal_force; //
 
   for (unsigned int i = 0; i < cells.size(); ++i)
     {
       typename DoFHandler<dim>::active_cell_iterator cell = {
         &dof_handler.get_triangulation(), cells[i].first, cells[i].second, &dof_handler};
 
-      local_dof_indices.resize(cell->get_fe().dofs_per_cell);
+      local_dof_indices.resize(cell->get_fe().n_dofs_per_cell());
+      buffer.reinit(cell->get_fe().n_dofs_per_cell());
+
       cell->get_dof_indices(local_dof_indices);
 
       const unsigned int n_points = ptrs[i + 1] - ptrs[i];
 
       const ArrayView<const Point<dim>> unit_points(points.data() + ptrs[i], n_points);
       const ArrayView<const double>     JxW(weights.data() + ptrs[i], n_points);
-      buffer.reinit(dof_handler.get_fe(cell->active_fe_index()).n_dofs_per_cell());
-      values_curvature.resize(unit_points.size());
-      values_normal_force.resize(unit_points.size());
 
-      cell->get_dof_values(curvature_solution, buffer);
+      values_curvature.resize(unit_points.size());    // TODO: will not be needed
+      values_normal_force.resize(unit_points.size()); //
+
+      constraints.get_dof_values(curvature_solution,
+                                 local_dof_indices.begin(),
+                                 buffer.begin(),
+                                 buffer.end());
 
       phi_curvature.evaluate(cell,
                              unit_points,
@@ -440,24 +452,32 @@ compute_force_vector_sharp_interface(const Triangulation<dim - 1, dim> &surface_
 
       for (int i = 0; i < dim; ++i)
         {
-          cell->get_dof_values(normal_vector_field.block(i), buffer);
+          constraints.get_dof_values(normal_vector_field.block(i),
+                                     local_dof_indices.begin(),
+                                     buffer.begin(),
+                                     buffer.end());
 
+          // TODO: update interface
           phi_normal_force.evaluate(cell,
                                     unit_points,
                                     make_array_view(buffer),
                                     values_normal_force,
                                     gradients_normal_force);
 
+          // TODO: update interface
           for (unsigned int q = 0; q < n_points; ++q)
             values_normal_force[q] *= values_curvature[q] * JxW[q];
 
+          // TODO: update interface
           phi_normal_force.integrate(cell,
                                      unit_points,
                                      make_array_view(buffer),
                                      values_normal_force,
                                      gradients_normal_force);
 
-          cell->distribute_local_to_global(buffer, force_vector.block(i));
+          constraints.distribute_local_to_global(buffer,
+                                                 local_dof_indices,
+                                                 force_vector.block(i));
         }
     }
 }
