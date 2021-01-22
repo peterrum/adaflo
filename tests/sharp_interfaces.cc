@@ -305,12 +305,8 @@ collect_evaluation_points(const Triangulation<dim, spacedim> &     surface_mesh,
                           const Triangulation<spacedim, spacedim> &tria,
                           const Mapping<spacedim, spacedim> &      mapping)
 {
-  std::vector<std::tuple<Point<spacedim>, double, std::pair<int, int>>> info;
-
-  const std::vector<bool>                    marked_vertices;
-  const GridTools::Cache<spacedim, spacedim> cache(tria, mapping);
-  const double                               tolerance = 1e-10;
-  auto                                       cell_hint = tria.begin_active();
+  // step 1: determine quadrature points in real coordinate system and quadrature weight
+  std::vector<std::pair<Point<spacedim>, double>> locally_owned_surface_points;
 
   FEValues<dim, spacedim> fe_eval(surface_mapping,
                                   surface_fe,
@@ -319,23 +315,65 @@ collect_evaluation_points(const Triangulation<dim, spacedim> &     surface_mesh,
 
   for (const auto &cell : surface_mesh.active_cell_iterators())
     {
+      if (cell->is_locally_owned() == false)
+        continue;
+
       fe_eval.reinit(cell);
 
       for (const auto q : fe_eval.quadrature_point_indices())
-        {
-          const auto cell_and_reference_coordinate =
-            GridTools::find_active_cell_around_point(
-              cache, fe_eval.quadrature_point(q), cell_hint, marked_vertices, tolerance);
-
-          cell_hint = cell_and_reference_coordinate.first;
-
-          info.emplace_back(
-            cell_and_reference_coordinate.second,
-            fe_eval.JxW(q),
-            std::pair<int, int>(cell_and_reference_coordinate.first->level(),
-                                cell_and_reference_coordinate.first->index()));
-        }
+        locally_owned_surface_points.emplace_back(fe_eval.quadrature_point(q),
+                                                  fe_eval.JxW(q));
     }
+
+  // step 2 communicate (TODO)
+
+  // step 3: convert quadrature points to a pair of cells and reference cell quadrature
+  // point
+  std::vector<std::tuple<Point<spacedim>, double, std::pair<int, int>>> info;
+
+  const std::vector<bool>                    marked_vertices;
+  const GridTools::Cache<spacedim, spacedim> cache(tria, mapping);
+  const double                               tolerance = 1e-10;
+  auto                                       cell_hint = tria.begin_active();
+
+  for (const auto &point_and_weight : locally_owned_surface_points)
+    {
+      const auto cell_and_reference_coordinate = GridTools::find_active_cell_around_point(
+        cache, point_and_weight.first, cell_hint, marked_vertices, tolerance);
+
+      cell_hint = cell_and_reference_coordinate.first;
+
+      info.emplace_back(
+        cell_and_reference_coordinate.second,
+        point_and_weight.second,
+        std::pair<int, int>(cell_and_reference_coordinate.first->level(),
+                            cell_and_reference_coordinate.first->index()));
+    }
+
+  // step 4: compress data structures
+  std::sort(info.begin(), info.end(), [](const auto &a, const auto &b) {
+    return std::get<2>(a) < std::get<2>(b);
+  });
+
+  std::vector<std::pair<int, int>> cells;
+  std::vector<unsigned int>        ptrs;
+  std::vector<double>              weights;
+  std::vector<Point<spacedim>>     points;
+
+  std::pair<int, int> dummy{-1, -1};
+
+  for (const auto &i : info)
+    {
+      if (dummy != std::get<2>(i))
+        {
+          dummy = std::get<2>(i);
+          cells.push_back(std::get<2>(i));
+          ptrs.push_back(weights.size());
+        }
+      weights.push_back(std::get<1>(i));
+      points.push_back(std::get<0>(i));
+    }
+  ptrs.push_back(weights.size());
 
   return info;
 }
