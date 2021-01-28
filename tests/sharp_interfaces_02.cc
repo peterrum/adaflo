@@ -53,21 +53,28 @@ test()
 
   QGauss<dim> quadrature(fe_degree + 1);
 
-  FESystem<dim, spacedim>   fe(FE_DGQArbitraryNodes<dim, spacedim>(quadrature), spacedim);
-  DoFHandler<dim, spacedim> dof_handler(tria);
+  FE_DGQArbitraryNodes<dim, spacedim> fe(quadrature);
+  DoFHandler<dim, spacedim>           dof_handler(tria);
   dof_handler.distribute_dofs(fe);
 
-  Vector<double> euler_vector(dof_handler.n_dofs());
+  FESystem<dim, spacedim>   fe_dim(fe, spacedim);
+  DoFHandler<dim, spacedim> dof_handler_dim(tria);
+  dof_handler_dim.distribute_dofs(fe_dim);
+
+  Vector<double> euler_vector(dof_handler_dim.n_dofs());
 
   {
     // stupid test
     MappingQGeneric<dim, spacedim> mapping(mapping_degree);
 
-    FEValues<dim, spacedim> fe_eval(mapping, fe, quadrature, update_quadrature_points);
+    FEValues<dim, spacedim> fe_eval(mapping,
+                                    fe_dim,
+                                    quadrature,
+                                    update_quadrature_points);
 
     Vector<double> temp;
 
-    for (const auto &cell : dof_handler.active_cell_iterators())
+    for (const auto &cell : dof_handler_dim.active_cell_iterators())
       {
         fe_eval.reinit(cell);
 
@@ -87,34 +94,72 @@ test()
       }
   }
 
-  Vector<double>                normal_vector(dof_handler.n_dofs());
-  MappingFEField<dim, spacedim> mapping(dof_handler, euler_vector);
+  Vector<double>                normal_vector(dof_handler_dim.n_dofs());
+  Vector<double>                curvature_vector(dof_handler.n_dofs());
+  MappingFEField<dim, spacedim> mapping(dof_handler_dim, euler_vector);
 
   {
-    FEValues<dim, spacedim> fe_eval(mapping,
-                                    fe,
-                                    quadrature,
-                                    update_gradients | update_normal_vectors);
+    FEValues<dim, spacedim> fe_eval(mapping, fe, quadrature, update_gradients);
+    FEValues<dim, spacedim> fe_eval_dim(mapping,
+                                        fe_dim,
+                                        quadrature,
+                                        update_normal_vectors);
 
-    Vector<double> normal_temp;
+    Vector<double>                           normal_temp;
+    std::array<Vector<double>, spacedim>     normal_temp_;
+    std::vector<Tensor<1, spacedim, double>> normal_grad;
+    Vector<double>                           curvature_temp;
 
-    for (const auto &cell : dof_handler.active_cell_iterators())
+    for (const auto &cell : tria.active_cell_iterators())
       {
-        fe_eval.reinit(cell);
+        TriaIterator<DoFCellAccessor<dim, spacedim, false>> dof_cell(&tria,
+                                                                     cell->level(),
+                                                                     cell->index(),
+                                                                     &dof_handler);
+        TriaIterator<DoFCellAccessor<dim, spacedim, false>> dof_cell_dim(
+          &tria, cell->level(), cell->index(), &dof_handler_dim);
 
-        AssertDimension(fe_eval.n_quadrature_points * spacedim, fe_eval.dofs_per_cell);
+        fe_eval.reinit(dof_cell);
+        fe_eval_dim.reinit(dof_cell_dim);
 
-        normal_temp.reinit(fe_eval.dofs_per_cell);
+        AssertDimension(fe_eval_dim.n_quadrature_points * spacedim,
+                        fe_eval_dim.dofs_per_cell);
 
-        for (const auto q : fe_eval.quadrature_point_indices())
+        normal_temp.reinit(fe_eval_dim.dofs_per_cell);
+        normal_temp = 0.0;
+
+        for (unsigned int c = 0; c < spacedim; ++c)
+          normal_temp_[c].reinit(fe_eval.dofs_per_cell);
+
+        curvature_temp.reinit(fe_eval.dofs_per_cell);
+        curvature_temp = 0.0;
+
+        for (const auto q : fe_eval_dim.quadrature_point_indices())
           {
-            const auto normal = fe_eval.normal_vector(q);
+            const auto normal = fe_eval_dim.normal_vector(q);
 
             for (unsigned int c = 0; c < spacedim; ++c)
-              normal_temp[fe_eval.n_quadrature_points * c + q] = normal[c];
+              {
+                normal_temp[fe_eval_dim.n_quadrature_points * c + q] = normal[c];
+                normal_temp_[c][q]                                   = normal[c];
+              }
           }
 
-        cell->set_dof_values(normal_temp, normal_vector);
+        for (unsigned int c = 0; c < spacedim; ++c)
+          {
+            for (const auto q : fe_eval_dim.quadrature_point_indices())
+              {
+                double temp = 0.0;
+
+                for (const auto s : fe_eval_dim.quadrature_point_indices())
+                  temp += fe_eval.shape_grad(s, q)[c] * normal_temp_[c][s];
+
+                curvature_temp[q] += temp;
+              }
+          }
+
+        dof_cell->set_dof_values(curvature_temp, curvature_vector);
+        dof_cell_dim->set_dof_values(normal_temp, normal_vector);
       }
   }
 
@@ -125,7 +170,8 @@ test()
 
     DataOut<dim, DoFHandler<dim, spacedim>> data_out;
     data_out.set_flags(flags);
-    data_out.add_data_vector(dof_handler, normal_vector, "normal");
+    data_out.add_data_vector(dof_handler, curvature_vector, "curvature");
+    data_out.add_data_vector(dof_handler_dim, normal_vector, "normal");
 
     data_out.build_patches(mapping, fe_degree + 1);
     data_out.write_vtu_with_pvtu_record("./", "result", 0, MPI_COMM_WORLD);
