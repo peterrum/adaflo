@@ -91,12 +91,15 @@ test()
   GridGenerator::hyper_sphere(tria, Point<spacedim>(), 0.5);
   tria.refine_global(n_refinements);
 
-  // quadrature rule
-  QGauss<dim> quadrature(fe_degree + 1);
-
-  // FE for curvature
+  // quadrature rule and FE for curvature
+#if true
+  QGauss<dim>                         quadrature(fe_degree + 1);
   FE_DGQArbitraryNodes<dim, spacedim> fe(quadrature);
-  DoFHandler<dim, spacedim>           dof_handler(tria);
+#else
+  FE_Q<dim, spacedim> fe(fe_degree);
+  Quadrature<dim>     quadrature(fe.get_unit_support_points());
+#endif
+  DoFHandler<dim, spacedim> dof_handler(tria);
   dof_handler.distribute_dofs(fe);
 
   // FE for normal
@@ -106,9 +109,14 @@ test()
 
   // Set up MappingFEField
   Vector<double> euler_vector(dof_handler_dim.n_dofs());
+#if false
+  (void) mapping_degree;
+  VectorTools::get_position_vector(dof_handler_dim, euler_vector);
+#else
   VectorTools::get_position_vector(dof_handler_dim,
                                    euler_vector,
                                    MappingQGeneric<dim, spacedim>(mapping_degree));
+#endif
   MappingFEField<dim, spacedim> mapping(dof_handler_dim, euler_vector);
 
   Vector<double> normal_vector(dof_handler_dim.n_dofs());
