@@ -36,6 +36,45 @@
 #include <adaflo/level_set_okz_reinitialization.h>
 #include <adaflo/util.h>
 
+namespace dealii
+{
+  namespace VectorTools
+  {
+    template <int dim, int spacedim, typename VectorType>
+    void
+    VectorTools::get_position_vector(const DoFHandler<dim, spacedim> &dof_handler_dim,
+                                     VectorType &                     euler_vector,
+                                     const Quadrature<dim> &          quadrature,
+                                     const Mapping<dim, spacedim> &   mapping)
+    {
+      FEValues<dim, spacedim> fe_eval(mapping,
+                                      dof_handler_dim.get_fe(),
+                                      quadrature,
+                                      update_quadrature_points);
+
+      Vector<double> temp;
+
+      for (const auto &cell : dof_handler_dim.active_cell_iterators())
+        {
+          fe_eval.reinit(cell);
+
+          AssertDimension(fe_eval.n_quadrature_points * spacedim, fe_eval.dofs_per_cell);
+
+          temp.reinit(fe_eval.dofs_per_cell);
+
+          for (const auto q : fe_eval.quadrature_point_indices())
+            {
+              const auto point = fe_eval.quadrature_point(q);
+
+              for (unsigned int c = 0; c < spacedim; ++c)
+                temp[fe_eval.n_quadrature_points * c + q] = point[c];
+            }
+
+          cell->set_dof_values(temp, euler_vector);
+        }
+    }
+  } // namespace VectorTools
+} // namespace dealii
 
 template <int dim>
 void
@@ -64,44 +103,16 @@ test()
   DoFHandler<dim, spacedim> dof_handler_dim(tria);
   dof_handler_dim.distribute_dofs(fe_dim);
 
-  // Euler vector for MappingFEField
+  // Set up MappingFEField
   Vector<double> euler_vector(dof_handler_dim.n_dofs());
-
-  // setup Euler vector (like VectorTools::get_position_vector() but taking a
-  // mapping)
-  {
-    MappingQGeneric<dim, spacedim> mapping(mapping_degree);
-
-    FEValues<dim, spacedim> fe_eval(mapping,
-                                    fe_dim,
-                                    quadrature,
-                                    update_quadrature_points);
-
-    Vector<double> temp;
-
-    for (const auto &cell : dof_handler_dim.active_cell_iterators())
-      {
-        fe_eval.reinit(cell);
-
-        AssertDimension(fe_eval.n_quadrature_points * spacedim, fe_eval.dofs_per_cell);
-
-        temp.reinit(fe_eval.dofs_per_cell);
-
-        for (const auto q : fe_eval.quadrature_point_indices())
-          {
-            const auto point = fe_eval.quadrature_point(q);
-
-            for (unsigned int c = 0; c < spacedim; ++c)
-              temp[fe_eval.n_quadrature_points * c + q] = point[c];
-          }
-
-        cell->set_dof_values(temp, euler_vector);
-      }
-  }
-
-  Vector<double>                normal_vector(dof_handler_dim.n_dofs());
-  Vector<double>                curvature_vector(dof_handler.n_dofs());
+  VectorTools::get_position_vector(dof_handler_dim,
+                                   euler_vector,
+                                   quadrature,
+                                   MappingQGeneric<dim, spacedim>(mapping_degree));
   MappingFEField<dim, spacedim> mapping(dof_handler_dim, euler_vector);
+
+  Vector<double> normal_vector(dof_handler_dim.n_dofs());
+  Vector<double> curvature_vector(dof_handler.n_dofs());
 
   {
     FEValues<dim, spacedim> fe_eval(mapping, fe, quadrature, update_gradients);
@@ -132,9 +143,7 @@ test()
             const auto normal = fe_eval_dim.normal_vector(q);
 
             for (unsigned int c = 0; c < spacedim; ++c)
-              {
-                normal_temp[fe_eval_dim.n_quadrature_points * c + q] = normal[c];
-              }
+              normal_temp[fe_eval_dim.n_quadrature_points * c + q] = normal[c];
           }
 
         dof_cell_dim->set_dof_values(normal_temp, normal_vector);
