@@ -44,13 +44,14 @@ namespace dealii
     void
     VectorTools::get_position_vector(const DoFHandler<dim, spacedim> &dof_handler_dim,
                                      VectorType &                     euler_vector,
-                                     const Quadrature<dim> &          quadrature,
                                      const Mapping<dim, spacedim> &   mapping)
     {
-      FEValues<dim, spacedim> fe_eval(mapping,
-                                      dof_handler_dim.get_fe(),
-                                      quadrature,
-                                      update_quadrature_points);
+      FEValues<dim, spacedim> fe_eval(
+        mapping,
+        dof_handler_dim.get_fe(),
+        Quadrature<dim>(
+          dof_handler_dim.get_fe().base_element(0).get_unit_support_points()),
+        update_quadrature_points);
 
       Vector<double> temp;
 
@@ -107,7 +108,6 @@ test()
   Vector<double> euler_vector(dof_handler_dim.n_dofs());
   VectorTools::get_position_vector(dof_handler_dim,
                                    euler_vector,
-                                   quadrature,
                                    MappingQGeneric<dim, spacedim>(mapping_degree));
   MappingFEField<dim, spacedim> mapping(dof_handler_dim, euler_vector);
 
