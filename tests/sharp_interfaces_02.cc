@@ -46,32 +46,40 @@ namespace dealii
                                      VectorType &                     euler_vector,
                                      const Mapping<dim, spacedim> &   mapping)
     {
+      for (const auto p :
+           dof_handler_dim.get_fe().base_element(0).get_unit_support_points())
+        std::cout << p << std::endl;
+
       FEValues<dim, spacedim> fe_eval(
         mapping,
         dof_handler_dim.get_fe(),
-        Quadrature<dim>(
-          dof_handler_dim.get_fe().base_element(0).get_unit_support_points()),
+        Quadrature<dim>(dof_handler_dim.get_fe().get_unit_support_points()),
         update_quadrature_points);
 
       Vector<double> temp;
+
+      std::vector<types::global_dof_index> dof_indices;
 
       for (const auto &cell : dof_handler_dim.active_cell_iterators())
         {
           fe_eval.reinit(cell);
 
-          AssertDimension(fe_eval.n_quadrature_points * spacedim, fe_eval.dofs_per_cell);
-
           temp.reinit(fe_eval.dofs_per_cell);
+          dof_indices.resize(fe_eval.dofs_per_cell);
+          cell->get_dof_indices(dof_indices);
 
           for (const auto q : fe_eval.quadrature_point_indices())
             {
               const auto point = fe_eval.quadrature_point(q);
 
-              for (unsigned int c = 0; c < spacedim; ++c)
-                temp[fe_eval.n_quadrature_points * c + q] = point[c];
+              const unsigned int comp =
+                dof_handler_dim.get_fe().system_to_component_index(q).first;
+
+              temp[q] = point[comp];
             }
 
-          cell->set_dof_values(temp, euler_vector);
+          for (unsigned int i = 0; i < fe_eval.dofs_per_cell; ++i)
+            euler_vector[dof_indices[i]] = temp[i];
         }
     }
   } // namespace VectorTools
@@ -92,7 +100,7 @@ test()
   tria.refine_global(n_refinements);
 
   // quadrature rule and FE for curvature
-#if true
+#if false
   QGauss<dim>                         quadrature(fe_degree + 1);
   FE_DGQArbitraryNodes<dim, spacedim> fe(quadrature);
 #else
@@ -119,29 +127,23 @@ test()
 #endif
   MappingFEField<dim, spacedim> mapping(dof_handler_dim, euler_vector);
 
-  Vector<double> normal_vector(dof_handler_dim.n_dofs());
-  Vector<double> curvature_vector(dof_handler.n_dofs());
 
+  // compute normal vector
+  Vector<double> normal_vector(dof_handler_dim.n_dofs());
   {
-    FEValues<dim, spacedim> fe_eval(mapping, fe, quadrature, update_gradients);
     FEValues<dim, spacedim> fe_eval_dim(mapping,
                                         fe_dim,
-                                        quadrature,
+                                        fe_dim.get_unit_support_points(),
                                         update_normal_vectors | update_gradients);
 
     Vector<double> normal_temp;
-    Vector<double> curvature_temp;
 
-    // compute normal vector
     for (const auto &cell : tria.active_cell_iterators())
       {
         TriaIterator<DoFCellAccessor<dim, spacedim, false>> dof_cell_dim(
           &tria, cell->level(), cell->index(), &dof_handler_dim);
 
         fe_eval_dim.reinit(dof_cell_dim);
-
-        AssertDimension(fe_eval_dim.n_quadrature_points * spacedim,
-                        fe_eval_dim.dofs_per_cell);
 
         normal_temp.reinit(fe_eval_dim.dofs_per_cell);
         normal_temp = 0.0;
@@ -150,14 +152,27 @@ test()
           {
             const auto normal = fe_eval_dim.normal_vector(q);
 
-            for (unsigned int c = 0; c < spacedim; ++c)
-              normal_temp[fe_eval_dim.n_quadrature_points * c + q] = normal[c];
+            const unsigned int comp =
+              dof_handler_dim.get_fe().system_to_component_index(q).first;
+
+            normal_temp[q] = normal[comp];
           }
 
         dof_cell_dim->set_dof_values(normal_temp, normal_vector);
       }
+  }
 
-    // compute curvature
+  // compute curvature
+  Vector<double> curvature_vector(dof_handler.n_dofs());
+  {
+    FEValues<dim, spacedim> fe_eval(mapping, fe, quadrature, update_gradients);
+    FEValues<dim, spacedim> fe_eval_dim(mapping,
+                                        fe_dim,
+                                        quadrature,
+                                        update_normal_vectors | update_gradients);
+
+    Vector<double> curvature_temp;
+
     for (const auto &cell : tria.active_cell_iterators())
       {
         TriaIterator<DoFCellAccessor<dim, spacedim, false>> dof_cell(&tria,
