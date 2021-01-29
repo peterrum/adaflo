@@ -46,10 +46,6 @@ namespace dealii
                                      VectorType &                     euler_vector,
                                      const Mapping<dim, spacedim> &   mapping)
     {
-      for (const auto p :
-           dof_handler_dim.get_fe().base_element(0).get_unit_support_points())
-        std::cout << p << std::endl;
-
       FEValues<dim, spacedim> fe_eval(
         mapping,
         dof_handler_dim.get_fe(),
@@ -58,15 +54,11 @@ namespace dealii
 
       Vector<double> temp;
 
-      std::vector<types::global_dof_index> dof_indices;
-
       for (const auto &cell : dof_handler_dim.active_cell_iterators())
         {
           fe_eval.reinit(cell);
 
           temp.reinit(fe_eval.dofs_per_cell);
-          dof_indices.resize(fe_eval.dofs_per_cell);
-          cell->get_dof_indices(dof_indices);
 
           for (const auto q : fe_eval.quadrature_point_indices())
             {
@@ -78,8 +70,7 @@ namespace dealii
               temp[q] = point[comp];
             }
 
-          for (unsigned int i = 0; i < fe_eval.dofs_per_cell; ++i)
-            euler_vector[dof_indices[i]] = temp[i];
+          cell->set_dof_values(temp, euler_vector);
         }
     }
   } // namespace VectorTools
