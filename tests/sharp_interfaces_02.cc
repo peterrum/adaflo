@@ -156,10 +156,8 @@ test()
   Vector<double> curvature_vector(dof_handler.n_dofs());
   {
     FEValues<dim, spacedim> fe_eval(mapping, fe, quadrature, update_gradients);
-    FEValues<dim, spacedim> fe_eval_dim(mapping,
-                                        fe_dim,
-                                        quadrature,
-                                        update_normal_vectors | update_gradients);
+    FEValues<dim, spacedim> fe_eval_dim(
+      mapping, fe_dim, quadrature, update_values | update_gradients | update_JxW_values);
 
     Vector<double> curvature_temp;
 
@@ -177,19 +175,28 @@ test()
 
         curvature_temp.reinit(fe_eval.dofs_per_cell);
 
+        std::vector<Vector<double>> normal_values(fe_eval.dofs_per_cell,
+                                                  Vector<double>(spacedim));
+
         std::vector<std::vector<Tensor<1, spacedim, double>>> normal_gradients(
           fe_eval.dofs_per_cell, std::vector<Tensor<1, spacedim, double>>(spacedim));
 
+        fe_eval_dim.get_function_values(normal_vector, normal_values);
         fe_eval_dim.get_function_gradients(normal_vector, normal_gradients);
 
         for (const auto q : fe_eval_dim.quadrature_point_indices())
           {
-            double temp = 0.0;
+            double curvature = 0.0;
 
             for (unsigned c = 0; c < spacedim; ++c)
-              temp += normal_gradients[q][c][c];
+              curvature += normal_gradients[q][c][c];
 
-            curvature_temp[q] += temp;
+            curvature_temp[q] = curvature;
+
+            Tensor<1, spacedim, double> result;
+            for (unsigned int i = 0; i < spacedim; ++i)
+              result[i] = curvature * normal_values[q][i] * fe_eval.JxW(q);
+            std::cout << result << std::endl;
           }
 
         dof_cell->set_dof_values(curvature_temp, curvature_vector);
