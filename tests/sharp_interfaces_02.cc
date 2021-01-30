@@ -92,7 +92,7 @@ test()
 
   // quadrature rule and FE for curvature
   FE_Q<dim, spacedim>       fe(fe_degree);
-  Quadrature<dim>           quadrature(fe.get_unit_support_points());
+  QGaussLobatto<dim>        quadrature(fe_degree + 1);
   DoFHandler<dim, spacedim> dof_handler(tria);
   dof_handler.distribute_dofs(fe);
 
