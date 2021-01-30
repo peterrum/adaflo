@@ -97,24 +97,79 @@ collect_integration_points()
 
 
 
-template <int dim>
+template <int dim, int spacedim>
 void
-compute_force_vector_sharp_interface(const Mapping<dim> &   mapping,
-                                     const DoFHandler<dim> &dof_handler,
-                                     VectorType &           force_vector)
+compute_force_vector_sharp_interface(
+  const Mapping<dim, spacedim> &   surface_mapping,
+  const DoFHandler<dim, spacedim> &surface_dofhandler,
+  const DoFHandler<dim, spacedim> &surface_dofhandler_dim,
+  const Quadrature<dim> &          surface_quadrature,
+  const Mapping<spacedim> &        mapping,
+  const DoFHandler<spacedim> &     dof_handler,
+  const VectorType &               normal_vector,
+  const VectorType &               curvature_vector,
+  VectorType &                     force_vector)
 {
-  const auto [cells, ptrs, weights, points] = collect_integration_points<dim>(/*TODO*/);
+  std::vector<Point<spacedim>>             integration_points;
+  std::vector<Tensor<1, spacedim, double>> integration_values;
+
+  {
+    FEValues<dim, spacedim> fe_eval(surface_mapping,
+                                    surface_dofhandler.get_fe(),
+                                    surface_quadrature,
+                                    update_values | update_quadrature_points |
+                                      update_JxW_values);
+    FEValues<dim, spacedim> fe_eval_dim(surface_mapping,
+                                        surface_dofhandler_dim.get_fe(),
+                                        surface_quadrature,
+                                        update_values);
+
+    const auto &tria_surface = surface_dofhandler.get_triangulation();
+
+    for (const auto &cell : tria_surface.active_cell_iterators())
+      {
+        TriaIterator<DoFCellAccessor<dim, spacedim, false>> dof_cell(&tria_surface,
+                                                                     cell->level(),
+                                                                     cell->index(),
+                                                                     &surface_dofhandler);
+        TriaIterator<DoFCellAccessor<dim, spacedim, false>> dof_cell_dim(
+          &tria_surface, cell->level(), cell->index(), &surface_dofhandler_dim);
+
+        fe_eval.reinit(dof_cell);
+        fe_eval_dim.reinit(dof_cell_dim);
+
+        std::vector<double>         curvature_values(fe_eval.dofs_per_cell);
+        std::vector<Vector<double>> normal_values(fe_eval.dofs_per_cell,
+                                                  Vector<double>(spacedim));
+
+        fe_eval_dim.get_function_values(curvature_vector, curvature_values);
+        fe_eval_dim.get_function_values(normal_vector, normal_values);
+
+        for (const auto q : fe_eval_dim.quadrature_point_indices())
+          {
+            Tensor<1, spacedim, double> result;
+            for (unsigned int i = 0; i < spacedim; ++i)
+              result[i] = curvature_values[q] * normal_values[q][i] * fe_eval.JxW(q);
+
+            integration_points.push_back(fe_eval.quadrature_point(q));
+            integration_values.push_back(result);
+          }
+      }
+  }
+
+  const auto [cells, ptrs, weights, points] =
+    collect_integration_points<spacedim>(/*TODO*/);
 
   AffineConstraints<double> constraints; // TODO: use the right ones
 
-  FEPointEvaluation<dim, dim> phi_normal_force(mapping, dof_handler.get_fe());
+  FEPointEvaluation<spacedim, spacedim> phi_normal_force(mapping, dof_handler.get_fe());
 
   std::vector<double>                  buffer;
   std::vector<types::global_dof_index> local_dof_indices;
 
   for (unsigned int i = 0; i < cells.size(); ++i)
     {
-      typename DoFHandler<dim>::active_cell_iterator cell = {
+      typename DoFHandler<spacedim>::active_cell_iterator cell = {
         &dof_handler.get_triangulation(), cells[i].first, cells[i].second, &dof_handler};
 
       const unsigned int n_dofs_per_cell = cell->get_fe().n_dofs_per_cell();
@@ -126,9 +181,10 @@ compute_force_vector_sharp_interface(const Mapping<dim> &   mapping,
 
       const unsigned int n_points = ptrs[i + 1] - ptrs[i];
 
-      const ArrayView<const Point<dim>> unit_points(points.data() + ptrs[i], n_points);
-      const ArrayView<const Tensor<1, dim, double>> JxW(weights.data() + ptrs[i],
-                                                        n_points);
+      const ArrayView<const Point<spacedim>> unit_points(points.data() + ptrs[i],
+                                                         n_points);
+      const ArrayView<const Tensor<1, spacedim, double>> JxW(weights.data() + ptrs[i],
+                                                             n_points);
 
       for (unsigned int q = 0; q < n_points; ++q)
         phi_normal_force.submit_value(JxW[q], q);
@@ -175,7 +231,7 @@ test()
 
 
   // compute normal vector
-  Vector<double> normal_vector(dof_handler_dim.n_dofs());
+  VectorType normal_vector(dof_handler_dim.n_dofs());
   {
     FEValues<dim, spacedim> fe_eval_dim(mapping,
                                         fe_dim,
@@ -209,7 +265,7 @@ test()
   }
 
   // compute curvature
-  Vector<double> curvature_vector(dof_handler.n_dofs());
+  VectorType curvature_vector(dof_handler.n_dofs());
   {
     FEValues<dim, spacedim> fe_eval(mapping, fe, quadrature, update_gradients);
     FEValues<dim, spacedim> fe_eval_dim(
@@ -274,8 +330,14 @@ test()
 
   VectorType force_vector_sharp_interface(background_dof_handler.n_dofs());
 
-  compute_force_vector_sharp_interface(background_mapping,
+  compute_force_vector_sharp_interface(mapping,
+                                       dof_handler,
+                                       dof_handler_dim,
+                                       QGauss<dim>(fe_degree + 1),
+                                       background_mapping,
                                        background_dof_handler,
+                                       normal_vector,
+                                       curvature_vector,
                                        force_vector_sharp_interface);
 
   // write computed vectors to Paraview
