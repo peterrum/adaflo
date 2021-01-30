@@ -109,16 +109,26 @@ collect_integration_points(
 
   for (const auto &point_and_weight : locally_owned_surface_points)
     {
-      const auto cell_and_reference_coordinate = GridTools::find_active_cell_around_point(
-        cache, point_and_weight.first, cell_hint, marked_vertices, tolerance);
+      try
+        {
+          const auto first_cell = GridTools::find_active_cell_around_point(
+            cache, point_and_weight.first, cell_hint, marked_vertices, tolerance);
 
-      cell_hint = cell_and_reference_coordinate.first;
+          cell_hint = first_cell.first;
 
-      info.emplace_back(
-        cell_and_reference_coordinate.second,
-        point_and_weight.second,
-        std::pair<int, int>(cell_and_reference_coordinate.first->level(),
-                            cell_and_reference_coordinate.first->index()));
+          const auto active_cells_around_point =
+            GridTools::find_all_active_cells_around_point(
+              mapping, tria, point_and_weight.first, tolerance, first_cell);
+
+          for (const auto &cell_and_reference_coordinate : active_cells_around_point)
+            info.emplace_back(
+              cell_and_reference_coordinate.second,
+              point_and_weight.second,
+              std::pair<int, int>(cell_and_reference_coordinate.first->level(),
+                                  cell_and_reference_coordinate.first->index()));
+        }
+      catch (...)
+        {}
     }
 
   // step 4: compress data structures
@@ -259,7 +269,7 @@ test()
 
   const unsigned int fe_degree      = 3;
   const unsigned int mapping_degree = fe_degree;
-  const unsigned int n_refinements  = 2;
+  const unsigned int n_refinements  = 5;
 
   Triangulation<dim, spacedim> tria;
   GridGenerator::hyper_sphere(tria, Point<spacedim>(), 0.5);
