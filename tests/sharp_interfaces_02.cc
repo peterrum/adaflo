@@ -36,6 +36,8 @@
 #include <adaflo/level_set_okz_reinitialization.h>
 #include <adaflo/util.h>
 
+using VectorType = LinearAlgebra::distributed::Vector<double>;
+
 namespace dealii
 {
   namespace VectorTools
@@ -75,6 +77,69 @@ namespace dealii
     }
   } // namespace VectorTools
 } // namespace dealii
+
+
+
+template <int dim, int spacedim = dim>
+std::tuple<std::vector<std::pair<int, int>>,
+           std::vector<unsigned int>,
+           std::vector<Tensor<1, dim, double>>,
+           std::vector<Point<spacedim>>>
+collect_integration_points()
+{
+  std::vector<std::pair<int, int>>    cells;
+  std::vector<unsigned int>           ptrs;
+  std::vector<Tensor<1, dim, double>> weights;
+  std::vector<Point<spacedim>>        points;
+
+  return {cells, ptrs, weights, points};
+}
+
+
+
+template <int dim>
+void
+compute_force_vector_sharp_interface(const Mapping<dim> &   mapping,
+                                     const DoFHandler<dim> &dof_handler,
+                                     VectorType &           force_vector)
+{
+  const auto [cells, ptrs, weights, points] = collect_integration_points<dim>(/*TODO*/);
+
+  AffineConstraints<double> constraints; // TODO: use the right ones
+
+  FEPointEvaluation<dim, dim> phi_normal_force(mapping, dof_handler.get_fe());
+
+  std::vector<double>                  buffer;
+  std::vector<types::global_dof_index> local_dof_indices;
+
+  for (unsigned int i = 0; i < cells.size(); ++i)
+    {
+      typename DoFHandler<dim>::active_cell_iterator cell = {
+        &dof_handler.get_triangulation(), cells[i].first, cells[i].second, &dof_handler};
+
+      const unsigned int n_dofs_per_cell = cell->get_fe().n_dofs_per_cell();
+
+      local_dof_indices.resize(n_dofs_per_cell);
+      buffer.resize(n_dofs_per_cell);
+
+      cell->get_dof_indices(local_dof_indices);
+
+      const unsigned int n_points = ptrs[i + 1] - ptrs[i];
+
+      const ArrayView<const Point<dim>> unit_points(points.data() + ptrs[i], n_points);
+      const ArrayView<const Tensor<1, dim, double>> JxW(weights.data() + ptrs[i],
+                                                        n_points);
+
+      for (unsigned int q = 0; q < n_points; ++q)
+        phi_normal_force.submit_value(JxW[q], q);
+
+      phi_normal_force.integrate(cell, unit_points, buffer, EvaluationFlags::values);
+
+      constraints.distribute_local_to_global(buffer, local_dof_indices, force_vector);
+    }
+}
+
+
 
 template <int dim>
 void
@@ -193,6 +258,25 @@ test()
         dof_cell->set_dof_values(curvature_temp, curvature_vector);
       }
   }
+
+  const unsigned int background_n_global_refinements = 6;
+  const unsigned int background_fe_degree            = 1;
+
+  Triangulation<spacedim> background_tria;
+  GridGenerator::hyper_cube(background_tria, -1.0, +1.0);
+  tria.refine_global(background_n_global_refinements);
+
+  FESystem<spacedim>   background_fe(FE_Q<spacedim>{background_fe_degree});
+  DoFHandler<spacedim> background_dof_handler(background_tria);
+  background_dof_handler.distribute_dofs(background_fe);
+
+  MappingQ1<spacedim> background_mapping;
+
+  VectorType force_vector_sharp_interface(background_dof_handler.n_dofs());
+
+  compute_force_vector_sharp_interface(background_mapping,
+                                       background_dof_handler,
+                                       force_vector_sharp_interface);
 
   // write computed vectors to Paraview
   {
