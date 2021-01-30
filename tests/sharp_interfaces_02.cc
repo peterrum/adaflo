@@ -80,17 +80,71 @@ namespace dealii
 
 
 
-template <int dim, int spacedim = dim>
+template <int spacedim>
 std::tuple<std::vector<std::pair<int, int>>,
            std::vector<unsigned int>,
-           std::vector<Tensor<1, dim, double>>,
+           std::vector<Tensor<1, spacedim, double>>,
            std::vector<Point<spacedim>>>
-collect_integration_points()
+collect_integration_points(
+  const Triangulation<spacedim, spacedim> &       tria,
+  const Mapping<spacedim, spacedim> &             mapping,
+  const std::vector<Point<spacedim>> &            integration_points,
+  const std::vector<Tensor<1, spacedim, double>> &integration_values)
 {
-  std::vector<std::pair<int, int>>    cells;
-  std::vector<unsigned int>           ptrs;
-  std::vector<Tensor<1, dim, double>> weights;
-  std::vector<Point<spacedim>>        points;
+  std::vector<std::pair<Point<spacedim>, Tensor<1, spacedim, double>>>
+    locally_owned_surface_points;
+
+  for (unsigned int i = 0; i < integration_points.size(); ++i)
+    locally_owned_surface_points.emplace_back(integration_points[i],
+                                              integration_values[i]);
+
+  std::vector<
+    std::tuple<Point<spacedim>, Tensor<1, spacedim, double>, std::pair<int, int>>>
+    info;
+
+  const std::vector<bool>                    marked_vertices;
+  const GridTools::Cache<spacedim, spacedim> cache(tria, mapping);
+  const double                               tolerance = 1e-10;
+  auto                                       cell_hint = tria.begin_active();
+
+  for (const auto &point_and_weight : locally_owned_surface_points)
+    {
+      const auto cell_and_reference_coordinate = GridTools::find_active_cell_around_point(
+        cache, point_and_weight.first, cell_hint, marked_vertices, tolerance);
+
+      cell_hint = cell_and_reference_coordinate.first;
+
+      info.emplace_back(
+        cell_and_reference_coordinate.second,
+        point_and_weight.second,
+        std::pair<int, int>(cell_and_reference_coordinate.first->level(),
+                            cell_and_reference_coordinate.first->index()));
+    }
+
+  // step 4: compress data structures
+  std::sort(info.begin(), info.end(), [](const auto &a, const auto &b) {
+    return std::get<2>(a) < std::get<2>(b);
+  });
+
+  std::vector<std::pair<int, int>>         cells;
+  std::vector<unsigned int>                ptrs;
+  std::vector<Tensor<1, spacedim, double>> weights;
+  std::vector<Point<spacedim>>             points;
+
+  std::pair<int, int> dummy{-1, -1};
+
+  for (const auto &i : info)
+    {
+      if (dummy != std::get<2>(i))
+        {
+          dummy = std::get<2>(i);
+          cells.push_back(std::get<2>(i));
+          ptrs.push_back(weights.size());
+        }
+      weights.push_back(std::get<1>(i));
+      points.push_back(std::get<0>(i));
+    }
+  ptrs.push_back(weights.size());
 
   return {cells, ptrs, weights, points};
 }
@@ -142,7 +196,7 @@ compute_force_vector_sharp_interface(
         std::vector<Vector<double>> normal_values(fe_eval.dofs_per_cell,
                                                   Vector<double>(spacedim));
 
-        fe_eval_dim.get_function_values(curvature_vector, curvature_values);
+        fe_eval.get_function_values(curvature_vector, curvature_values);
         fe_eval_dim.get_function_values(normal_vector, normal_values);
 
         for (const auto q : fe_eval_dim.quadrature_point_indices())
@@ -157,8 +211,8 @@ compute_force_vector_sharp_interface(
       }
   }
 
-  const auto [cells, ptrs, weights, points] =
-    collect_integration_points<spacedim>(/*TODO*/);
+  const auto [cells, ptrs, weights, points] = collect_integration_points(
+    dof_handler.get_triangulation(), mapping, integration_points, integration_values);
 
   AffineConstraints<double> constraints; // TODO: use the right ones
 
@@ -320,9 +374,9 @@ test()
 
   Triangulation<spacedim> background_tria;
   GridGenerator::hyper_cube(background_tria, -1.0, +1.0);
-  tria.refine_global(background_n_global_refinements);
+  background_tria.refine_global(background_n_global_refinements);
 
-  FESystem<spacedim>   background_fe(FE_Q<spacedim>{background_fe_degree});
+  FESystem<spacedim>   background_fe(FE_Q<spacedim>{background_fe_degree}, spacedim);
   DoFHandler<spacedim> background_dof_handler(background_tria);
   background_dof_handler.distribute_dofs(background_fe);
 
@@ -354,7 +408,28 @@ test()
       mapping,
       fe_degree + 1,
       DataOut<dim, DoFHandler<dim, spacedim>>::CurvedCellRegion::curved_inner_cells);
-    data_out.write_vtu_with_pvtu_record("./", "result", 0, MPI_COMM_WORLD);
+    data_out.write_vtu_with_pvtu_record("./",
+                                        "sharp_interface_02_surface",
+                                        0,
+                                        MPI_COMM_WORLD);
+  }
+
+  {
+    DataOutBase::VtkFlags flags;
+    flags.write_higher_order_cells = true;
+
+    DataOut<spacedim> data_out;
+    data_out.set_flags(flags);
+    data_out.attach_dof_handler(background_dof_handler);
+    data_out.add_data_vector(background_dof_handler,
+                             force_vector_sharp_interface,
+                             "force");
+
+    data_out.build_patches(background_mapping, background_fe_degree + 1);
+    data_out.write_vtu_with_pvtu_record("./",
+                                        "sharp_interface_02_background",
+                                        0,
+                                        MPI_COMM_WORLD);
   }
 
   {

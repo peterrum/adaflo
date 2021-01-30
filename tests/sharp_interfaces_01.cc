@@ -627,7 +627,7 @@ test()
                                "force_si_" + std::to_string(i));
 
     data_out.build_patches(mapping, fe_degree + 1);
-    data_out.write_vtu_with_pvtu_record("./", "result", 0, MPI_COMM_WORLD);
+    data_out.write_vtu_with_pvtu_record("./", "sharp_interface_01", 0, MPI_COMM_WORLD);
   }
 }
 
