@@ -219,19 +219,30 @@ private:
   void
   update_surface_tension()
   {
-    VectorType normal_vector;
-    VectorType curvature_vector;
+    return; // TODO: not working
 
-    compute_force_vector_sharp_interface(*euler_mapping,
-                                         surface_dofhandler,
-                                         euler_dofhandler,
-                                         QGauss<dim - 1>(
-                                           euler_dofhandler.get_fe().degree + 1),
-                                         navier_stokes_solver.mapping,
-                                         navier_stokes_solver.get_dof_handler_u(),
-                                         normal_vector,
-                                         curvature_vector,
-                                         navier_stokes_solver.user_rhs.block(0));
+    VectorType normal_vector(euler_dofhandler.n_dofs());
+    VectorType curvature_vector(surface_dofhandler.n_dofs());
+
+    compute_normal(*euler_mapping, euler_dofhandler, normal_vector);
+    compute_curvature(*euler_mapping,
+                      euler_dofhandler,
+                      surface_dofhandler,
+                      QGaussLobatto<dim - 1>(surface_dofhandler.get_fe().degree + 1),
+                      normal_vector,
+                      curvature_vector);
+
+    compute_force_vector_sharp_interface(
+      *euler_mapping,
+      surface_dofhandler,
+      euler_dofhandler,
+      QGauss<dim - 1>(euler_dofhandler.get_fe().degree + 1),
+      navier_stokes_solver.mapping,
+      navier_stokes_solver.get_dof_handler_u(),
+      navier_stokes_solver.get_parameters().surface_tension,
+      normal_vector,
+      curvature_vector,
+      navier_stokes_solver.user_rhs.block(0));
   }
 
   void
@@ -314,7 +325,7 @@ MicroFluidicProblem<dim>::run()
 
   Triangulation<dim - 1, dim> surface_mesh;
   GridGenerator::hyper_sphere(surface_mesh, Point<dim>(0.5, 0.5), 0.25);
-  surface_mesh.refine_global(3);
+  surface_mesh.refine_global(5);
 
   SharpInterfaceSolver<dim> solver(navier_stokes_solver, surface_mesh);
 

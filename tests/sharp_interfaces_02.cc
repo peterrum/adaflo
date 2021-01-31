@@ -77,88 +77,12 @@ test()
 
   // compute normal vector
   VectorType normal_vector(dof_handler_dim.n_dofs());
-  {
-    FEValues<dim, spacedim> fe_eval_dim(mapping,
-                                        fe_dim,
-                                        fe_dim.get_unit_support_points(),
-                                        update_normal_vectors | update_gradients);
-
-    Vector<double> normal_temp;
-
-    for (const auto &cell : tria.active_cell_iterators())
-      {
-        TriaIterator<DoFCellAccessor<dim, spacedim, false>> dof_cell_dim(
-          &tria, cell->level(), cell->index(), &dof_handler_dim);
-
-        fe_eval_dim.reinit(dof_cell_dim);
-
-        normal_temp.reinit(fe_eval_dim.dofs_per_cell);
-        normal_temp = 0.0;
-
-        for (const auto q : fe_eval_dim.quadrature_point_indices())
-          {
-            const auto normal = fe_eval_dim.normal_vector(q);
-
-            const unsigned int comp =
-              dof_handler_dim.get_fe().system_to_component_index(q).first;
-
-            normal_temp[q] = normal[comp];
-          }
-
-        dof_cell_dim->set_dof_values(normal_temp, normal_vector);
-      }
-  }
+  compute_normal(mapping, dof_handler_dim, normal_vector);
 
   // compute curvature
   VectorType curvature_vector(dof_handler.n_dofs());
-  {
-    FEValues<dim, spacedim> fe_eval(mapping, fe, quadrature, update_gradients);
-    FEValues<dim, spacedim> fe_eval_dim(
-      mapping, fe_dim, quadrature, update_values | update_gradients | update_JxW_values);
-
-    Vector<double> curvature_temp;
-
-    for (const auto &cell : tria.active_cell_iterators())
-      {
-        TriaIterator<DoFCellAccessor<dim, spacedim, false>> dof_cell(&tria,
-                                                                     cell->level(),
-                                                                     cell->index(),
-                                                                     &dof_handler);
-        TriaIterator<DoFCellAccessor<dim, spacedim, false>> dof_cell_dim(
-          &tria, cell->level(), cell->index(), &dof_handler_dim);
-
-        fe_eval.reinit(dof_cell);
-        fe_eval_dim.reinit(dof_cell_dim);
-
-        curvature_temp.reinit(fe_eval.dofs_per_cell);
-
-        std::vector<Vector<double>> normal_values(fe_eval.dofs_per_cell,
-                                                  Vector<double>(spacedim));
-
-        std::vector<std::vector<Tensor<1, spacedim, double>>> normal_gradients(
-          fe_eval.dofs_per_cell, std::vector<Tensor<1, spacedim, double>>(spacedim));
-
-        fe_eval_dim.get_function_values(normal_vector, normal_values);
-        fe_eval_dim.get_function_gradients(normal_vector, normal_gradients);
-
-        for (const auto q : fe_eval_dim.quadrature_point_indices())
-          {
-            double curvature = 0.0;
-
-            for (unsigned c = 0; c < spacedim; ++c)
-              curvature += normal_gradients[q][c][c];
-
-            curvature_temp[q] = curvature;
-
-            Tensor<1, spacedim, double> result;
-            for (unsigned int i = 0; i < spacedim; ++i)
-              result[i] = curvature * normal_values[q][i] * fe_eval.JxW(q);
-            std::cout << result << std::endl;
-          }
-
-        dof_cell->set_dof_values(curvature_temp, curvature_vector);
-      }
-  }
+  compute_curvature(
+    mapping, dof_handler_dim, dof_handler, quadrature, normal_vector, curvature_vector);
 
   const unsigned int background_n_global_refinements = 6;
   const unsigned int background_fe_degree            = 1;
@@ -181,6 +105,7 @@ test()
                                        QGauss<dim>(fe_degree + 1),
                                        background_mapping,
                                        background_dof_handler,
+                                       1.0,
                                        normal_vector,
                                        curvature_vector,
                                        force_vector_sharp_interface);
