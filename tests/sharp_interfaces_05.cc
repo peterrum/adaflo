@@ -41,6 +41,21 @@
 using VectorType = LinearAlgebra::distributed::Vector<double>;
 
 template <int dim>
+class VelocityFunction : public Function<dim>
+{
+public:
+  VelocityFunction()
+    : Function<dim>(dim)
+  {}
+
+  double
+  value(const Point<dim> &p, const unsigned int component) const
+  {
+    return component == 0 ? p[1] : -p[0];
+  }
+};
+
+template <int dim>
 void
 test()
 {
@@ -85,32 +100,37 @@ test()
 
   Vector<double> velocity_vector(background_dof_handler.n_dofs());
 
-  // determine if quadrature points of background mesh are within codim-1 mesh
-  VectorTools::update_position_vector(dt,
-                                      background_dof_handler,
-                                      background_mapping,
-                                      velocity_vector,
-                                      dof_handler_dim,
-                                      mapping,
-                                      euler_vector);
+  VectorTools::interpolate(background_mapping,
+                           background_dof_handler,
+                           VelocityFunction<spacedim>(),
+                           velocity_vector);
 
   // print result
-  {
-    DataOutBase::VtkFlags flags;
+  for (unsigned int i = 0; i < 20; ++i)
+    {
+      DataOutBase::VtkFlags flags;
 
-    DataOut<dim, DoFHandler<dim, spacedim>> data_out;
-    data_out.set_flags(flags);
-    data_out.attach_dof_handler(dof_handler);
+      DataOut<dim, DoFHandler<dim, spacedim>> data_out;
+      data_out.set_flags(flags);
+      data_out.attach_dof_handler(dof_handler);
 
-    data_out.build_patches(
-      mapping,
-      fe_degree + 1,
-      DataOut<dim, DoFHandler<dim, spacedim>>::CurvedCellRegion::curved_inner_cells);
-    data_out.write_vtu_with_pvtu_record("./",
-                                        "sharp_interface_05_surface",
-                                        0,
-                                        MPI_COMM_WORLD);
-  }
+      data_out.build_patches(
+        mapping,
+        fe_degree + 1,
+        DataOut<dim, DoFHandler<dim, spacedim>>::CurvedCellRegion::curved_inner_cells);
+      data_out.write_vtu_with_pvtu_record("./",
+                                          "sharp_interface_05_surface",
+                                          i,
+                                          MPI_COMM_WORLD);
+
+      VectorTools::update_position_vector(dt,
+                                          background_dof_handler,
+                                          background_mapping,
+                                          velocity_vector,
+                                          dof_handler_dim,
+                                          mapping,
+                                          euler_vector);
+    }
   {
     DataOutBase::VtkFlags flags;
     // flags.write_higher_order_cells = true;

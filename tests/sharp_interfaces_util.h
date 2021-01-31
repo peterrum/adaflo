@@ -96,14 +96,12 @@ namespace dealii
 
           for (const auto q : fe_eval.quadrature_point_indices())
             {
-              if (euler_vector_bool[temp_dof_indices[q]] == 1.0)
-                continue;
+              // if (euler_vector_bool[temp_dof_indices[q]] == 1.0)
+              //  continue;
 
               euler_vector_bool[temp_dof_indices[q]] = 1.0;
 
-              Tensor<1, spacedim, double> velocity;
-
-              {
+              const auto velocity = [&] {
                 const auto cell_and_reference_coordinate =
                   GridTools::find_active_cell_around_point(cache,
                                                            fe_eval.quadrature_point(q),
@@ -133,16 +131,17 @@ namespace dealii
                                       buffer,
                                       EvaluationFlags::values);
 
-                velocity = phi_velocity.get_value(0);
-              }
+                return phi_velocity.get_value(0);
+              }();
 
               const unsigned int comp =
                 euler_dofhandler.get_fe().system_to_component_index(q).first;
 
-              temp[q] += dt * velocity[comp];
+              // temp[q] += dt * velocity[comp];
+              temp[q] = fe_eval.quadrature_point(q)[comp] + dt * velocity[comp];
             }
 
-          cell->set_dof_values(temp, euler_vector);
+          cell->set_dof_values(temp, euler_vector_temp);
         }
 
       euler_vector = euler_vector_temp;
