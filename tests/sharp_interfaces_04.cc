@@ -96,14 +96,10 @@ public:
   void
   advance_time_step()
   {
-    // move surface mesh
-
-    // update phases
-
-    // update surface tension
-
-    // update gravity force
-
+    this->move_surface_mesh();
+    this->update_phases();
+    this->update_surface_tension();
+    this->update_gravity_force();
     navier_stokes_solver.advance_time_step();
   }
 
@@ -114,6 +110,22 @@ public:
   }
 
 private:
+  void
+  move_surface_mesh()
+  {}
+
+  void
+  update_phases()
+  {}
+
+  void
+  update_surface_tension()
+  {}
+
+  void
+  update_gravity_force()
+  {}
+
   NavierStokes<dim> &navier_stokes_solver;
 };
 
@@ -153,9 +165,10 @@ MicroFluidicProblem<dim>::run()
   navier_stokes_solver.set_symmetry_boundary(2);
 
   navier_stokes_solver.setup_problem(Functions::ZeroFunction<dim>(dim));
-  navier_stokes_solver.output_solution(parameters.output_filename);
 
   SharpInterfaceSolver<dim> solver(navier_stokes_solver);
+
+  solver.output_solution(parameters.output_filename);
 
   while (navier_stokes_solver.time_stepping.at_end() == false)
     {
