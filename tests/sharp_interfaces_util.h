@@ -21,6 +21,8 @@
 #include <boost/geometry/geometries/point_xy.hpp>
 #include <boost/geometry/geometries/polygon.hpp>
 
+#include <filesystem>
+
 namespace dealii
 {
   namespace VectorTools
@@ -542,5 +544,202 @@ namespace dealii
         dof_cell->set_dof_values(curvature_temp, curvature_vector);
       }
   }
+
+
+
+  template <int dim>
+  class SharpInterfaceSolver
+  {
+  public:
+    using VectorType = LinearAlgebra::distributed::Vector<double>;
+
+    SharpInterfaceSolver(NavierStokes<dim> &          navier_stokes_solver,
+                         Triangulation<dim - 1, dim> &surface_mesh)
+      : navier_stokes_solver(navier_stokes_solver)
+      , euler_dofhandler(surface_mesh)
+      , surface_dofhandler(surface_mesh)
+    {
+      const unsigned int fe_degree      = 3;
+      const unsigned int mapping_degree = fe_degree;
+
+      FESystem<dim - 1, dim> euler_fe(FE_Q<dim - 1, dim>(fe_degree), dim);
+      euler_dofhandler.distribute_dofs(euler_fe);
+
+      surface_dofhandler.distribute_dofs(FE_Q<dim - 1, dim>(fe_degree));
+
+      euler_vector.reinit(euler_dofhandler.n_dofs());
+      VectorTools::get_position_vector(euler_dofhandler,
+                                       euler_vector,
+                                       MappingQGeneric<dim - 1, dim>(mapping_degree));
+
+      euler_mapping =
+        std::make_shared<MappingFEField<dim - 1, dim, VectorType>>(euler_dofhandler,
+                                                                   euler_vector);
+    }
+
+    void
+    advance_time_step()
+    {
+      this->move_surface_mesh();
+      this->update_phases();
+      this->update_gravity_force();
+      this->update_surface_tension();
+
+      navier_stokes_solver.get_constraints_u().set_zero(
+        navier_stokes_solver.user_rhs.block(0));
+      navier_stokes_solver.advance_time_step();
+    }
+
+    void
+    output_solution(const std::string &output_filename)
+    {
+      // background mesh
+      {
+        navier_stokes_solver.output_solution(output_filename);
+      }
+
+      // surface mesh
+      {
+        DataOutBase::VtkFlags flags;
+
+        DataOut<dim - 1, DoFHandler<dim - 1, dim>> data_out;
+        data_out.set_flags(flags);
+        data_out.attach_dof_handler(euler_dofhandler);
+
+        data_out.build_patches(
+          *euler_mapping,
+          euler_dofhandler.get_fe().degree + 1,
+          DataOut<dim - 1,
+                  DoFHandler<dim - 1, dim>>::CurvedCellRegion::curved_inner_cells);
+
+        std::filesystem::path path(output_filename + "_surface");
+
+        data_out.write_vtu_with_pvtu_record(path.parent_path().string() + "/",
+                                            path.filename(),
+                                            navier_stokes_solver.time_stepping.step_no(),
+                                            MPI_COMM_WORLD);
+      }
+    }
+
+  private:
+    void
+    move_surface_mesh()
+    {
+      VectorTools::update_position_vector(navier_stokes_solver.time_stepping.step_size(),
+                                          navier_stokes_solver.get_dof_handler_u(),
+                                          navier_stokes_solver.mapping,
+                                          navier_stokes_solver.solution.block(0),
+                                          euler_dofhandler,
+                                          *euler_mapping,
+                                          euler_vector);
+    }
+
+    void
+    update_phases()
+    {
+      boost::geometry::model::polygon<boost::geometry::model::d2::point_xy<double>>
+        polygon;
+      GridTools::construct_polygon(*euler_mapping, euler_dofhandler, polygon);
+
+      double dummy;
+
+      const auto density        = navier_stokes_solver.get_parameters().density;
+      const auto density_diff   = navier_stokes_solver.get_parameters().density_diff;
+      const auto viscosity      = navier_stokes_solver.get_parameters().viscosity;
+      const auto viscosity_diff = navier_stokes_solver.get_parameters().viscosity_diff;
+
+      navier_stokes_solver.matrix_free->template cell_loop<double, double>(
+        [&](const auto &matrix_free, auto &, const auto &, auto macro_cells) {
+          FEEvaluation<dim, -1, 0, 1, double> phi(matrix_free, 0, 0);
+
+          for (unsigned int cell = macro_cells.first; cell < macro_cells.second; ++cell)
+            {
+              phi.reinit(cell);
+
+              for (unsigned int q = 0; q < phi.n_q_points; ++q)
+                {
+                  const auto indicator =
+                    GridTools::within(polygon, phi.quadrature_point(q));
+
+                  navier_stokes_solver.get_matrix().begin_densities(cell)[q] =
+                    density + density_diff * indicator;
+                  navier_stokes_solver.get_matrix().begin_viscosities(cell)[q] =
+                    viscosity + viscosity_diff * indicator;
+                }
+            }
+        },
+        dummy,
+        dummy);
+    }
+
+    void
+    update_surface_tension()
+    {
+      return; // TODO: not working
+
+      VectorType normal_vector(euler_dofhandler.n_dofs());
+      VectorType curvature_vector(surface_dofhandler.n_dofs());
+
+      compute_normal(*euler_mapping, euler_dofhandler, normal_vector);
+      compute_curvature(*euler_mapping,
+                        euler_dofhandler,
+                        surface_dofhandler,
+                        QGaussLobatto<dim - 1>(surface_dofhandler.get_fe().degree + 1),
+                        normal_vector,
+                        curvature_vector);
+
+      compute_force_vector_sharp_interface(
+        *euler_mapping,
+        surface_dofhandler,
+        euler_dofhandler,
+        QGauss<dim - 1>(euler_dofhandler.get_fe().degree + 1),
+        navier_stokes_solver.mapping,
+        navier_stokes_solver.get_dof_handler_u(),
+        navier_stokes_solver.get_parameters().surface_tension,
+        normal_vector,
+        curvature_vector,
+        navier_stokes_solver.user_rhs.block(0));
+    }
+
+    void
+    update_gravity_force()
+    {
+      const bool zero_out = true;
+
+      const auto gravity = navier_stokes_solver.get_parameters().gravity;
+
+      navier_stokes_solver.matrix_free->template cell_loop<VectorType, std::nullptr_t>(
+        [&](const auto &matrix_free, auto &vec, const auto &, auto macro_cells) {
+          FEEvaluation<dim, -1, 0, dim, double> phi(matrix_free, 0, 0);
+
+          for (unsigned int cell = macro_cells.first; cell < macro_cells.second; ++cell)
+            {
+              phi.reinit(cell);
+
+              for (unsigned int q = 0; q < phi.n_q_points; ++q)
+                {
+                  Tensor<1, dim, VectorizedArray<double>> force;
+
+                  force[dim - 1] -=
+                    gravity * navier_stokes_solver.get_matrix().begin_densities(cell)[q];
+                  phi.submit_value(force, q);
+                }
+              phi.integrate_scatter(true, false, vec);
+            }
+        },
+        navier_stokes_solver.user_rhs.block(0),
+        nullptr,
+        zero_out);
+    }
+
+    // background mesh
+    NavierStokes<dim> &navier_stokes_solver;
+
+    // surface mesh
+    DoFHandler<dim - 1, dim>               euler_dofhandler;
+    DoFHandler<dim - 1, dim>               surface_dofhandler;
+    VectorType                             euler_vector;
+    std::shared_ptr<Mapping<dim - 1, dim>> euler_mapping;
+  };
 
 } // namespace dealii
