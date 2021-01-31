@@ -40,63 +40,20 @@
 #include <adaflo/level_set_okz_reinitialization.h>
 #include <adaflo/util.h>
 
-//#include <boost/geometry/domains/gis/io/wkt/wkt.hpp>
+#include "sharp_interfaces_util.h"
 
 using VectorType = LinearAlgebra::distributed::Vector<double>;
-
-namespace dealii
-{
-  namespace VectorTools
-  {
-    template <int dim, int spacedim, typename VectorType>
-    void
-    VectorTools::get_position_vector(const DoFHandler<dim, spacedim> &dof_handler_dim,
-                                     VectorType &                     euler_vector,
-                                     const Mapping<dim, spacedim> &   mapping)
-    {
-      FEValues<dim, spacedim> fe_eval(
-        mapping,
-        dof_handler_dim.get_fe(),
-        Quadrature<dim>(dof_handler_dim.get_fe().get_unit_support_points()),
-        update_quadrature_points);
-
-      Vector<double> temp;
-
-      for (const auto &cell : dof_handler_dim.active_cell_iterators())
-        {
-          fe_eval.reinit(cell);
-
-          temp.reinit(fe_eval.dofs_per_cell);
-
-          for (const auto q : fe_eval.quadrature_point_indices())
-            {
-              const auto point = fe_eval.quadrature_point(q);
-
-              const unsigned int comp =
-                dof_handler_dim.get_fe().system_to_component_index(q).first;
-
-              temp[q] = point[comp];
-            }
-
-          cell->set_dof_values(temp, euler_vector);
-        }
-    }
-  } // namespace VectorTools
-} // namespace dealii
-
-
 
 template <int dim>
 void
 test()
 {
-  //
+  // surface mesh
   const unsigned int spacedim       = dim + 1;
   const unsigned int fe_degree      = 3;
   const unsigned int mapping_degree = fe_degree;
   const unsigned int n_refinements  = 5;
 
-  //
   Triangulation<dim, spacedim> tria;
   GridGenerator::hyper_sphere(tria, Point<spacedim>(), 0.5);
   tria.refine_global(n_refinements);
@@ -109,41 +66,13 @@ test()
   DoFHandler<dim, spacedim> dof_handler_dim(tria);
   dof_handler_dim.distribute_dofs(fe_dim);
 
-  //
   Vector<double> euler_vector(dof_handler_dim.n_dofs());
   VectorTools::get_position_vector(dof_handler_dim,
                                    euler_vector,
                                    MappingQGeneric<dim, spacedim>(mapping_degree));
   MappingFEField<dim, spacedim> mapping(dof_handler_dim, euler_vector);
 
-  //
-  typedef boost::geometry::model::d2::point_xy<double> point_type;
-  typedef boost::geometry::model::polygon<point_type>  polygon_type;
-
-
-
-  std::vector<boost::geometry::model::d2::point_xy<double>> points;
-  {
-    FEValues<dim, spacedim> fe_eval(mapping,
-                                    fe,
-                                    QGauss<dim>(fe_degree + 1),
-                                    update_quadrature_points);
-
-    for (const auto &cell : dof_handler.active_cell_iterators())
-      {
-        fe_eval.reinit(cell);
-
-        for (const auto q : fe_eval.quadrature_point_indices())
-          {
-            const auto point = fe_eval.quadrature_point(q);
-            points.emplace_back(point[0], point[1]);
-          }
-      }
-  }
-
-  polygon_type poly;
-  boost::geometry::assign_points(poly, points);
-
+  // background mesh
   const unsigned int background_n_global_refinements = 6;
   const unsigned int background_fe_degree            = 1;
 
@@ -151,36 +80,36 @@ test()
   GridGenerator::hyper_cube(background_tria, -1.0, +1.0);
   background_tria.refine_global(background_n_global_refinements);
 
+  MappingQ1<spacedim>  background_mapping;
   FE_Q<spacedim>       background_fe(background_fe_degree);
   DoFHandler<spacedim> background_dof_handler(background_tria);
   background_dof_handler.distribute_dofs(background_fe);
 
-  MappingQ1<spacedim> background_mapping;
-
+  // determine if quadrature points of background mesh are within codim-1 mesh
   VectorType force_vector_sharp_interface(background_dof_handler.n_dofs());
+  GridTools::within(mapping,
+                    dof_handler,
+                    background_mapping,
+                    background_dof_handler,
+                    force_vector_sharp_interface);
+
+  // print result
   {
-    FEValues<spacedim> fe_eval(background_mapping,
-                               background_fe,
-                               background_fe.get_unit_support_points(),
-                               update_quadrature_points);
+    DataOutBase::VtkFlags flags;
 
-    for (const auto &cell : background_dof_handler.active_cell_iterators())
-      {
-        fe_eval.reinit(cell);
+    DataOut<dim, DoFHandler<dim, spacedim>> data_out;
+    data_out.set_flags(flags);
+    data_out.attach_dof_handler(dof_handler);
 
-        Vector<double> vec(fe_eval.n_quadrature_points);
-
-        for (const auto q : fe_eval.quadrature_point_indices())
-          {
-            const auto point = fe_eval.quadrature_point(q);
-            point_type p(point[0], point[1]);
-            vec[q] = static_cast<double>(boost::geometry::within(p, poly));
-          }
-
-        cell->set_dof_values(vec, force_vector_sharp_interface);
-      }
+    data_out.build_patches(
+      mapping,
+      fe_degree + 1,
+      DataOut<dim, DoFHandler<dim, spacedim>>::CurvedCellRegion::curved_inner_cells);
+    data_out.write_vtu_with_pvtu_record("./",
+                                        "sharp_interface_03_surface",
+                                        0,
+                                        MPI_COMM_WORLD);
   }
-
   {
     DataOutBase::VtkFlags flags;
     flags.write_higher_order_cells = true;
@@ -194,21 +123,10 @@ test()
 
     data_out.build_patches(background_mapping, background_fe_degree + 1);
     data_out.write_vtu_with_pvtu_record("./",
-                                        "sharp_interface_02_background",
+                                        "sharp_interface_03_background",
                                         0,
                                         MPI_COMM_WORLD);
   }
-
-  /*
-  points.emplace_back(0,0);
-  points.emplace_back(1,0);
-  points.emplace_back(1,1);
-  points.emplace_back(0,1);
-  points.emplace_back(0,0);
-   */
-
-
-  std::cout << boost::geometry::area(poly) << std::endl;
 }
 
 
