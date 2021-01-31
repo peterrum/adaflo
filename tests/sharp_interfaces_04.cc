@@ -30,6 +30,8 @@
 #include <adaflo/parameters.h>
 #include <adaflo/phase_field.h>
 
+#include <filesystem>
+
 #include "sharp_interfaces_util.h"
 
 
@@ -151,8 +153,11 @@ public:
         *euler_mapping,
         euler_dofhandler.get_fe().degree + 1,
         DataOut<dim - 1, DoFHandler<dim - 1, dim>>::CurvedCellRegion::curved_inner_cells);
-      data_out.write_vtu_with_pvtu_record("./",
-                                          output_filename + "_surface",
+
+      std::filesystem::path path(output_filename + "_surface");
+
+      data_out.write_vtu_with_pvtu_record(path.parent_path().string() + "/",
+                                          path.filename(),
                                           navier_stokes_solver.time_stepping.step_no(),
                                           MPI_COMM_WORLD);
     }
