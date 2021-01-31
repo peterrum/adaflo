@@ -101,7 +101,6 @@ public:
                        Triangulation<dim - 1, dim> &surface_mesh)
     : navier_stokes_solver(navier_stokes_solver)
     , euler_dofhandler(surface_mesh)
-    , euler_mapping(euler_dofhandler, euler_vector)
   {
     const unsigned int fe_degree      = 3;
     const unsigned int mapping_degree = fe_degree;
@@ -109,10 +108,14 @@ public:
     FESystem<dim - 1, dim> euler_fe(FE_Q<dim - 1, dim>(fe_degree), dim);
     euler_dofhandler.distribute_dofs(euler_fe);
 
-    euler_vector(euler_dofhandler.n_dofs());
+    euler_vector.reinit(euler_dofhandler.n_dofs());
     VectorTools::get_position_vector(euler_dofhandler,
                                      euler_vector,
                                      MappingQGeneric<dim - 1, dim>(mapping_degree));
+
+    euler_mapping =
+      std::make_shared<MappingFEField<dim - 1, dim, VectorType>>(euler_dofhandler,
+                                                                 euler_vector);
   }
 
   void
@@ -143,7 +146,7 @@ private:
                                         navier_stokes_solver.mapping,
                                         navier_stokes_solver.solution_update.block(0),
                                         euler_dofhandler,
-                                        euler_mapping,
+                                        *euler_mapping,
                                         euler_vector);
   }
 
@@ -151,7 +154,7 @@ private:
   update_phases()
   {
     boost::geometry::model::polygon<boost::geometry::model::d2::point_xy<double>> polygon;
-    GridTools::construct_polygon(euler_mapping, euler_dofhandler, polygon);
+    GridTools::construct_polygon(*euler_mapping, euler_dofhandler, polygon);
 
     double dummy;
 
@@ -224,9 +227,9 @@ private:
   NavierStokes<dim> &navier_stokes_solver;
 
   // surface mesh
-  DoFHandler<dim - 1, dim>                       euler_dofhandler;
-  VectorType                                     euler_vector;
-  const MappingFEField<dim - 1, dim, VectorType> euler_mapping;
+  DoFHandler<dim - 1, dim>               euler_dofhandler;
+  VectorType                             euler_vector;
+  std::shared_ptr<Mapping<dim - 1, dim>> euler_mapping;
 };
 
 
@@ -267,6 +270,8 @@ MicroFluidicProblem<dim>::run()
   navier_stokes_solver.setup_problem(Functions::ZeroFunction<dim>(dim));
 
   Triangulation<dim - 1, dim> surface_mesh;
+  GridGenerator::hyper_sphere(surface_mesh, Point<dim>(0.5, 0.5), 0.25);
+  surface_mesh.refine_global(3);
 
   SharpInterfaceSolver<dim> solver(navier_stokes_solver, surface_mesh);
 
