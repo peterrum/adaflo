@@ -69,8 +69,8 @@ test()
   MappingFEField<dim, spacedim> mapping(dof_handler_dim, euler_vector);
 
   // background mesh
-  const unsigned int background_n_global_refinements = 6;
-  const unsigned int background_fe_degree            = 1;
+  const unsigned int background_n_global_refinements = 5;
+  const unsigned int background_fe_degree            = 2;
 
   Triangulation<spacedim> background_tria;
   GridGenerator::hyper_cube(background_tria, -1.0, +1.0);
