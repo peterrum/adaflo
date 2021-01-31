@@ -134,7 +134,28 @@ public:
   void
   output_solution(const std::string &output_filename)
   {
-    navier_stokes_solver.output_solution(output_filename);
+    // background mesh
+    {
+      navier_stokes_solver.output_solution(output_filename);
+    }
+
+    // surface mesh
+    {
+      DataOutBase::VtkFlags flags;
+
+      DataOut<dim - 1, DoFHandler<dim - 1, dim>> data_out;
+      data_out.set_flags(flags);
+      data_out.attach_dof_handler(euler_dofhandler);
+
+      data_out.build_patches(
+        *euler_mapping,
+        euler_dofhandler.get_fe().degree + 1,
+        DataOut<dim - 1, DoFHandler<dim - 1, dim>>::CurvedCellRegion::curved_inner_cells);
+      data_out.write_vtu_with_pvtu_record("./",
+                                          output_filename + "_surface",
+                                          navier_stokes_solver.time_stepping.step_no(),
+                                          MPI_COMM_WORLD);
+    }
   }
 
 private:
@@ -144,7 +165,7 @@ private:
     VectorTools::update_position_vector(navier_stokes_solver.time_stepping.step_size(),
                                         navier_stokes_solver.get_dof_handler_u(),
                                         navier_stokes_solver.mapping,
-                                        navier_stokes_solver.solution_update.block(0),
+                                        navier_stokes_solver.solution.block(0),
                                         euler_dofhandler,
                                         *euler_mapping,
                                         euler_vector);
@@ -174,7 +195,6 @@ private:
             for (unsigned int q = 0; q < phi.n_q_points; ++q)
               {
                 const auto indicator =
-                  VectorizedArray<double>(1.0) -
                   GridTools::within(polygon, phi.quadrature_point(q));
 
                 navier_stokes_solver.get_matrix().begin_densities(cell)[q] =
