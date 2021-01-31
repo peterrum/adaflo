@@ -122,6 +122,9 @@ public:
     this->update_phases();
     this->update_surface_tension();
     this->update_gravity_force();
+
+    navier_stokes_solver.get_constraints_u().set_zero(
+      navier_stokes_solver.user_rhs.block(0));
     navier_stokes_solver.advance_time_step();
   }
 
@@ -188,7 +191,34 @@ private:
 
   void
   update_gravity_force()
-  {}
+  {
+    const bool zero_out = true;
+
+    const auto gravity = navier_stokes_solver.get_parameters().gravity;
+
+    navier_stokes_solver.matrix_free->template cell_loop<VectorType, std::nullptr_t>(
+      [&](const auto &matrix_free, auto &vec, const auto &, auto macro_cells) {
+        FEEvaluation<dim, -1, 0, dim, double> phi(matrix_free, 0, 0);
+
+        for (unsigned int cell = macro_cells.first; cell < macro_cells.second; ++cell)
+          {
+            phi.reinit(cell);
+
+            for (unsigned int q = 0; q < phi.n_q_points; ++q)
+              {
+                Tensor<1, dim, VectorizedArray<double>> force;
+
+                force[dim - 1] -=
+                  gravity * navier_stokes_solver.get_matrix().begin_densities(cell)[q];
+                phi.submit_value(force, q);
+              }
+            phi.integrate_scatter(true, false, vec);
+          }
+      },
+      navier_stokes_solver.user_rhs.block(0),
+      nullptr,
+      zero_out);
+  }
 
   // background mesh
   NavierStokes<dim> &navier_stokes_solver;
