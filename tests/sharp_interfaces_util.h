@@ -57,10 +57,13 @@ namespace dealii
 
     template <int dim, int spacedim, typename VectorType>
     void
-    update_position_vector(const double                     dt,
-                           const DoFHandler<dim, spacedim> &euler_dofhandler,
-                           const Mapping<dim, spacedim> &   euler_mapping,
-                           VectorType &                     euler_vector)
+    update_position_vector(const double                          dt,
+                           const DoFHandler<spacedim, spacedim> &background_dofhandler,
+                           const Mapping<spacedim, spacedim> &   background_mapping,
+                           const VectorType &                    velocity_vector,
+                           const DoFHandler<dim, spacedim> &     euler_dofhandler,
+                           const Mapping<dim, spacedim> &        euler_mapping,
+                           VectorType &                          euler_vector)
     {
       FEValues<dim, spacedim> fe_eval(
         euler_mapping,
@@ -75,11 +78,18 @@ namespace dealii
       auto euler_vector_bool = euler_vector;
       euler_vector_bool      = 0.0;
 
+      const std::vector<bool>                    marked_vertices;
+      const GridTools::Cache<spacedim, spacedim> cache(
+        background_dofhandler.get_triangulation(), background_mapping);
+      const double tolerance = 1e-10;
+      auto         cell_hint = background_dofhandler.get_triangulation().begin_active();
+
       for (const auto &cell : euler_dofhandler.active_cell_iterators())
         {
           fe_eval.reinit(cell);
 
           temp.reinit(fe_eval.dofs_per_cell);
+          temp_dof_indices.resize(fe_eval.dofs_per_cell);
 
           cell->get_dof_indices(temp_dof_indices);
           cell->get_dof_values(euler_vector, temp);
@@ -91,9 +101,40 @@ namespace dealii
 
               euler_vector_bool[temp_dof_indices[q]] = 1.0;
 
-              const auto point = fe_eval.quadrature_point(q);
-
               Tensor<1, spacedim, double> velocity;
+
+              {
+                const auto cell_and_reference_coordinate =
+                  GridTools::find_active_cell_around_point(cache,
+                                                           fe_eval.quadrature_point(q),
+                                                           cell_hint,
+                                                           marked_vertices,
+                                                           tolerance);
+
+                std::vector<double> buffer(
+                  background_dofhandler.get_fe().n_dofs_per_cell());
+
+                typename DoFHandler<spacedim, spacedim>::active_cell_iterator
+                  background_cell{&background_dofhandler.get_triangulation(),
+                                  cell_and_reference_coordinate.first->level(),
+                                  cell_and_reference_coordinate.first->index(),
+                                  &background_dofhandler};
+                background_cell->get_dof_values(velocity_vector,
+                                                buffer.begin(),
+                                                buffer.end());
+
+                const ArrayView<const Point<spacedim>> unit_points(
+                  &cell_and_reference_coordinate.second, 1);
+
+                FEPointEvaluation<spacedim, spacedim> phi_velocity(
+                  background_mapping, background_dofhandler.get_fe());
+                phi_velocity.evaluate(cell_and_reference_coordinate.first,
+                                      unit_points,
+                                      buffer,
+                                      EvaluationFlags::values);
+
+                velocity = phi_velocity.get_value(0);
+              }
 
               const unsigned int comp =
                 euler_dofhandler.get_fe().system_to_component_index(q).first;

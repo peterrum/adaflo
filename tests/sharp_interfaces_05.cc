@@ -79,12 +79,20 @@ test()
   background_tria.refine_global(background_n_global_refinements);
 
   MappingQ1<spacedim>  background_mapping;
-  FE_Q<spacedim>       background_fe(background_fe_degree);
+  FESystem<spacedim>   background_fe(FE_Q<spacedim>{background_fe_degree}, spacedim);
   DoFHandler<spacedim> background_dof_handler(background_tria);
   background_dof_handler.distribute_dofs(background_fe);
 
+  Vector<double> velocity_vector(background_dof_handler.n_dofs());
+
   // determine if quadrature points of background mesh are within codim-1 mesh
-  VectorTools::update_position_vector(dt, dof_handler_dim, mapping, euler_vector);
+  VectorTools::update_position_vector(dt,
+                                      background_dof_handler,
+                                      background_mapping,
+                                      velocity_vector,
+                                      dof_handler_dim,
+                                      mapping,
+                                      euler_vector);
 
   // print result
   {
