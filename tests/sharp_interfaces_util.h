@@ -154,16 +154,17 @@ namespace dealii
 
   namespace GridTools
   {
-    template <int dim, int spacedim, typename VectorType>
+    template <int dim, int spacedim>
     void
-    within(const MappingFEField<dim, spacedim> &mapping,
-           const DoFHandler<dim, spacedim> &    dof_handler,
-           const Mapping<spacedim> &            background_mapping,
-           const DoFHandler<spacedim> &         background_dof_handler,
-           VectorType &                         force_vector_sharp_interface)
+    construct_polygon(
+      const Mapping<dim, spacedim> &   mapping,
+      const DoFHandler<dim, spacedim> &dof_handler,
+      boost::geometry::model::polygon<boost::geometry::model::d2::point_xy<double>> &poly)
     {
       typedef boost::geometry::model::d2::point_xy<double> point_type;
-      typedef boost::geometry::model::polygon<point_type>  polygon_type;
+      typedef boost::geometry::model::polygon<
+        boost::geometry::model::d2::point_xy<double>>
+        polygon_type;
 
       std::vector<boost::geometry::model::d2::point_xy<double>> points;
       {
@@ -184,8 +185,54 @@ namespace dealii
           }
       }
 
-      polygon_type poly;
       boost::geometry::assign_points(poly, points);
+    }
+
+
+    template <int dim>
+    double
+    within(
+      const boost::geometry::model::polygon<boost::geometry::model::d2::point_xy<double>>
+        &               polygon,
+      const Point<dim> &point)
+    {
+      boost::geometry::model::d2::point_xy<double> p(point[0], point[1]);
+      return boost::geometry::within(p, polygon);
+    }
+    template <int dim>
+    VectorizedArray<double>
+    within(
+      const boost::geometry::model::polygon<boost::geometry::model::d2::point_xy<double>>
+        &                                        polygon,
+      const Point<dim, VectorizedArray<double>> &points)
+    {
+      VectorizedArray<double> result;
+
+      for (unsigned int v = 0; v < VectorizedArray<double>::size(); ++v)
+        {
+          boost::geometry::model::d2::point_xy<double> p(points[0][v], points[1][v]);
+          result[v] = boost::geometry::within(p, polygon);
+        }
+
+      return result;
+    }
+
+    template <int dim, int spacedim, typename VectorType>
+    void
+    within(const MappingFEField<dim, spacedim> &mapping,
+           const DoFHandler<dim, spacedim> &    dof_handler,
+           const Mapping<spacedim> &            background_mapping,
+           const DoFHandler<spacedim> &         background_dof_handler,
+           VectorType &                         force_vector_sharp_interface)
+    {
+      typedef boost::geometry::model::d2::point_xy<double> point_type;
+      typedef boost::geometry::model::polygon<
+        boost::geometry::model::d2::point_xy<double>>
+        polygon_type;
+
+      polygon_type poly;
+
+      construct_polygon(mapping, dof_handler, poly);
 
       {
         FEValues<spacedim> fe_eval(
@@ -202,9 +249,7 @@ namespace dealii
 
             for (const auto q : fe_eval.quadrature_point_indices())
               {
-                const auto point = fe_eval.quadrature_point(q);
-                point_type p(point[0], point[1]);
-                vec[q] = static_cast<double>(boost::geometry::within(p, poly));
+                vec[q] = static_cast<double>(within(poly, fe_eval.quadrature_point(q)));
               }
 
             cell->set_dof_values(vec, force_vector_sharp_interface);

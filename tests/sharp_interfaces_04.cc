@@ -23,6 +23,8 @@
 
 #include <deal.II/grid/grid_generator.h>
 
+#include <deal.II/matrix_free/fe_evaluation.h>
+
 #include <adaflo/level_set_okz.h>
 #include <adaflo/level_set_okz_matrix.h>
 #include <adaflo/parameters.h>
@@ -144,7 +146,41 @@ private:
 
   void
   update_phases()
-  {}
+  {
+    boost::geometry::model::polygon<boost::geometry::model::d2::point_xy<double>> polygon;
+    GridTools::construct_polygon(euler_mapping, euler_dofhandler, polygon);
+
+    double dummy;
+
+    const auto density        = navier_stokes_solver.get_parameters().density;
+    const auto density_diff   = navier_stokes_solver.get_parameters().density_diff;
+    const auto viscosity      = navier_stokes_solver.get_parameters().viscosity;
+    const auto viscosity_diff = navier_stokes_solver.get_parameters().viscosity_diff;
+
+    navier_stokes_solver.matrix_free->template cell_loop<double, double>(
+      [&](const auto &matrix_free, auto &, const auto &, auto macro_cells) {
+        FEEvaluation<dim, -1, 0, 1, double> phi(matrix_free, 0, 0);
+
+        for (unsigned int cell = macro_cells.first; cell < macro_cells.second; ++cell)
+          {
+            phi.reinit(cell);
+
+            for (unsigned int q = 0; q < phi.n_q_points; ++q)
+              {
+                const auto indicator =
+                  VectorizedArray<double>(1.0) -
+                  GridTools::within(polygon, phi.quadrature_point(q));
+
+                navier_stokes_solver.get_matrix().begin_densities(cell)[q] =
+                  density + density_diff * indicator;
+                navier_stokes_solver.get_matrix().begin_viscosities(cell)[q] =
+                  viscosity + viscosity_diff * indicator;
+              }
+          }
+      },
+      dummy,
+      dummy);
+  }
 
   void
   update_surface_tension()
