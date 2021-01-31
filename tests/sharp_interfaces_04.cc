@@ -86,6 +86,40 @@ MicroFluidicProblem<dim>::MicroFluidicProblem(const TwoPhaseParameters &paramete
 
 
 template <int dim>
+class SharpInterfaceSolver
+{
+public:
+  SharpInterfaceSolver(NavierStokes<dim> &navier_stokes_solver)
+    : navier_stokes_solver(navier_stokes_solver)
+  {}
+
+  void
+  advance_time_step()
+  {
+    // move surface mesh
+
+    // update phases
+
+    // update surface tension
+
+    // update gravity force
+
+    navier_stokes_solver.advance_time_step();
+  }
+
+  void
+  output_solution(const std::string &output_filename)
+  {
+    navier_stokes_solver.output_solution(output_filename);
+  }
+
+private:
+  NavierStokes<dim> &navier_stokes_solver;
+};
+
+
+
+template <int dim>
 void
 MicroFluidicProblem<dim>::run()
 {
@@ -112,25 +146,19 @@ MicroFluidicProblem<dim>::run()
 
   AssertThrow(parameters.global_refinements < 12, ExcInternalError());
 
-  NavierStokes<dim> solver(parameters, triangulation, &timer);
+  NavierStokes<dim> navier_stokes_solver(parameters, triangulation, &timer);
 
-  solver.set_no_slip_boundary(0);
-  solver.fix_pressure_constant(0);
-  solver.set_symmetry_boundary(2);
+  navier_stokes_solver.set_no_slip_boundary(0);
+  navier_stokes_solver.fix_pressure_constant(0);
+  navier_stokes_solver.set_symmetry_boundary(2);
 
-  solver.setup_problem(Functions::ZeroFunction<dim>(dim));
-  solver.output_solution(parameters.output_filename);
+  navier_stokes_solver.setup_problem(Functions::ZeroFunction<dim>(dim));
+  navier_stokes_solver.output_solution(parameters.output_filename);
 
-  while (solver.time_stepping.at_end() == false)
+  SharpInterfaceSolver<dim> solver(navier_stokes_solver);
+
+  while (navier_stokes_solver.time_stepping.at_end() == false)
     {
-      // move surface mesh
-
-      // update phases
-
-      // update surface tension
-
-      // update gravity force
-
       solver.advance_time_step();
 
       solver.output_solution(parameters.output_filename);
