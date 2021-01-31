@@ -19,6 +19,8 @@
 
 #include <deal.II/distributed/tria.h>
 
+#include <deal.II/fe/mapping_fe_field.h>
+
 #include <deal.II/grid/grid_generator.h>
 
 #include <adaflo/level_set_okz.h>
@@ -26,8 +28,12 @@
 #include <adaflo/parameters.h>
 #include <adaflo/phase_field.h>
 
+#include "sharp_interfaces_util.h"
+
 
 using namespace dealii;
+
+using VectorType = LinearAlgebra::distributed::Vector<double>;
 
 
 struct TwoPhaseParameters : public FlowParameters
@@ -89,9 +95,23 @@ template <int dim>
 class SharpInterfaceSolver
 {
 public:
-  SharpInterfaceSolver(NavierStokes<dim> &navier_stokes_solver)
+  SharpInterfaceSolver(NavierStokes<dim> &          navier_stokes_solver,
+                       Triangulation<dim - 1, dim> &surface_mesh)
     : navier_stokes_solver(navier_stokes_solver)
-  {}
+    , euler_dofhandler(surface_mesh)
+    , euler_mapping(euler_dofhandler, euler_vector)
+  {
+    const unsigned int fe_degree      = 3;
+    const unsigned int mapping_degree = fe_degree;
+
+    FESystem<dim - 1, dim> euler_fe(FE_Q<dim - 1, dim>(fe_degree), dim);
+    euler_dofhandler.distribute_dofs(euler_fe);
+
+    euler_vector(euler_dofhandler.n_dofs());
+    VectorTools::get_position_vector(euler_dofhandler,
+                                     euler_vector,
+                                     MappingQGeneric<dim - 1, dim>(mapping_degree));
+  }
 
   void
   advance_time_step()
@@ -112,7 +132,15 @@ public:
 private:
   void
   move_surface_mesh()
-  {}
+  {
+    VectorTools::update_position_vector(navier_stokes_solver.time_stepping.step_size(),
+                                        navier_stokes_solver.get_dof_handler_u(),
+                                        navier_stokes_solver.mapping,
+                                        navier_stokes_solver.solution_update.block(0),
+                                        euler_dofhandler,
+                                        euler_mapping,
+                                        euler_vector);
+  }
 
   void
   update_phases()
@@ -126,7 +154,13 @@ private:
   update_gravity_force()
   {}
 
+  // background mesh
   NavierStokes<dim> &navier_stokes_solver;
+
+  // surface mesh
+  DoFHandler<dim - 1, dim>                       euler_dofhandler;
+  VectorType                                     euler_vector;
+  const MappingFEField<dim - 1, dim, VectorType> euler_mapping;
 };
 
 
@@ -166,7 +200,9 @@ MicroFluidicProblem<dim>::run()
 
   navier_stokes_solver.setup_problem(Functions::ZeroFunction<dim>(dim));
 
-  SharpInterfaceSolver<dim> solver(navier_stokes_solver);
+  Triangulation<dim - 1, dim> surface_mesh;
+
+  SharpInterfaceSolver<dim> solver(navier_stokes_solver, surface_mesh);
 
   solver.output_solution(parameters.output_filename);
 

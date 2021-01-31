@@ -13,6 +13,10 @@
 //
 // --------------------------------------------------------------------------
 
+#include <deal.II/fe/fe_point_evaluation.h>
+
+#include <deal.II/grid/grid_tools_cache.h>
+
 #include <boost/geometry.hpp>
 #include <boost/geometry/geometries/point_xy.hpp>
 #include <boost/geometry/geometries/polygon.hpp>
