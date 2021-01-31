@@ -23,9 +23,9 @@ namespace dealii
   {
     template <int dim, int spacedim, typename VectorType>
     void
-    VectorTools::get_position_vector(const DoFHandler<dim, spacedim> &dof_handler_dim,
-                                     VectorType &                     euler_vector,
-                                     const Mapping<dim, spacedim> &   mapping)
+    get_position_vector(const DoFHandler<dim, spacedim> &dof_handler_dim,
+                        VectorType &                     euler_vector,
+                        const Mapping<dim, spacedim> &   mapping)
     {
       FEValues<dim, spacedim> fe_eval(
         mapping,
@@ -53,6 +53,58 @@ namespace dealii
 
           cell->set_dof_values(temp, euler_vector);
         }
+    }
+
+    template <int dim, int spacedim, typename VectorType>
+    void
+    update_position_vector(const double                     dt,
+                           const DoFHandler<dim, spacedim> &euler_dofhandler,
+                           const Mapping<dim, spacedim> &   euler_mapping,
+                           VectorType &                     euler_vector)
+    {
+      FEValues<dim, spacedim> fe_eval(
+        euler_mapping,
+        euler_dofhandler.get_fe(),
+        Quadrature<dim>(euler_dofhandler.get_fe().get_unit_support_points()),
+        update_quadrature_points);
+
+      Vector<double>                       temp;
+      std::vector<types::global_dof_index> temp_dof_indices;
+
+      auto euler_vector_temp = euler_vector;
+      auto euler_vector_bool = euler_vector;
+      euler_vector_bool      = 0.0;
+
+      for (const auto &cell : euler_dofhandler.active_cell_iterators())
+        {
+          fe_eval.reinit(cell);
+
+          temp.reinit(fe_eval.dofs_per_cell);
+
+          cell->get_dof_indices(temp_dof_indices);
+          cell->get_dof_values(euler_vector, temp);
+
+          for (const auto q : fe_eval.quadrature_point_indices())
+            {
+              if (euler_vector_bool[temp_dof_indices[q]] == 1.0)
+                continue;
+
+              euler_vector_bool[temp_dof_indices[q]] = 1.0;
+
+              const auto point = fe_eval.quadrature_point(q);
+
+              Tensor<1, spacedim, double> velocity;
+
+              const unsigned int comp =
+                euler_dofhandler.get_fe().system_to_component_index(q).first;
+
+              temp[q] += dt * velocity[comp];
+            }
+
+          cell->set_dof_values(temp, euler_vector);
+        }
+
+      euler_vector = euler_vector_temp;
     }
   } // namespace VectorTools
 
