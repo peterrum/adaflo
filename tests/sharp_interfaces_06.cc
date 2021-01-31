@@ -77,39 +77,20 @@ template <int dim>
 void
 MicroFluidicProblem<dim>::run()
 {
-  std::vector<unsigned int> subdivisions(dim, 5);
-  subdivisions[dim - 1] = 10;
-
-  const Point<dim> bottom_left;
-  const Point<dim> top_right = (dim == 2 ? Point<dim>(1, 2) : Point<dim>(1, 1, 2));
-  GridGenerator::subdivided_hyper_rectangle(triangulation,
-                                            subdivisions,
-                                            bottom_left,
-                                            top_right);
-
-  typename parallel::distributed::Triangulation<dim>::active_cell_iterator
-    cell = triangulation.begin(),
-    endc = triangulation.end();
-
-  for (; cell != endc; ++cell)
-    for (unsigned int face = 0; face < GeometryInfo<dim>::faces_per_cell; ++face)
-      if (cell->face(face)->at_boundary() &&
-          (std::fabs(cell->face(face)->center()[0] - 1) < 1e-14 ||
-           std::fabs(cell->face(face)->center()[0]) < 1e-14))
-        cell->face(face)->set_boundary_id(2);
-
-  AssertThrow(parameters.global_refinements < 12, ExcInternalError());
+  GridGenerator::subdivided_hyper_cube(triangulation,
+                                       parameters.global_refinements,
+                                       -2.5,
+                                       2.5);
 
   NavierStokes<dim> navier_stokes_solver(parameters, triangulation, &timer);
 
   navier_stokes_solver.set_no_slip_boundary(0);
   navier_stokes_solver.fix_pressure_constant(0);
-  navier_stokes_solver.set_symmetry_boundary(2);
-
   navier_stokes_solver.setup_problem(Functions::ZeroFunction<dim>(dim));
+  navier_stokes_solver.output_solution(parameters.output_filename);
 
   Triangulation<dim - 1, dim> surface_mesh;
-  GridGenerator::hyper_sphere(surface_mesh, Point<dim>(0.5, 0.5), 0.25);
+  GridGenerator::hyper_sphere(surface_mesh, Point<dim>(0.02, 0.03), 0.5);
   surface_mesh.refine_global(5);
 
   SharpInterfaceSolver<dim> solver(navier_stokes_solver, surface_mesh);

@@ -637,16 +637,19 @@ namespace dealii
     void
     update_phases()
     {
+      const auto density        = navier_stokes_solver.get_parameters().density;
+      const auto density_diff   = navier_stokes_solver.get_parameters().density_diff;
+      const auto viscosity      = navier_stokes_solver.get_parameters().viscosity;
+      const auto viscosity_diff = navier_stokes_solver.get_parameters().viscosity_diff;
+
+      if (density_diff == 0.0 && viscosity_diff == 0.0)
+        return; // nothing to do
+
       boost::geometry::model::polygon<boost::geometry::model::d2::point_xy<double>>
         polygon;
       GridTools::construct_polygon(*euler_mapping, euler_dofhandler, polygon);
 
       double dummy;
-
-      const auto density        = navier_stokes_solver.get_parameters().density;
-      const auto density_diff   = navier_stokes_solver.get_parameters().density_diff;
-      const auto viscosity      = navier_stokes_solver.get_parameters().viscosity;
-      const auto viscosity_diff = navier_stokes_solver.get_parameters().viscosity_diff;
 
       navier_stokes_solver.matrix_free->template cell_loop<double, double>(
         [&](const auto &matrix_free, auto &, const auto &, auto macro_cells) {
@@ -704,9 +707,12 @@ namespace dealii
     void
     update_gravity_force()
     {
-      const bool zero_out = true;
-
       const auto gravity = navier_stokes_solver.get_parameters().gravity;
+
+      const auto density      = navier_stokes_solver.get_parameters().density;
+      const auto density_diff = navier_stokes_solver.get_parameters().density_diff;
+
+      const bool zero_out = true;
 
       navier_stokes_solver.matrix_free->template cell_loop<VectorType, std::nullptr_t>(
         [&](const auto &matrix_free, auto &vec, const auto &, auto macro_cells) {
@@ -721,7 +727,10 @@ namespace dealii
                   Tensor<1, dim, VectorizedArray<double>> force;
 
                   force[dim - 1] -=
-                    gravity * navier_stokes_solver.get_matrix().begin_densities(cell)[q];
+                    gravity *
+                    (density_diff == 0.0 ?
+                       VectorizedArray<double>(density) :
+                       navier_stokes_solver.get_matrix().begin_densities(cell)[q]);
                   phi.submit_value(force, q);
                 }
               phi.integrate_scatter(true, false, vec);
