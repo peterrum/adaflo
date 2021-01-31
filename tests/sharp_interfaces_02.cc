@@ -36,49 +36,9 @@
 #include <adaflo/level_set_okz_reinitialization.h>
 #include <adaflo/util.h>
 
+#include "sharp_interfaces_util.h"
+
 using VectorType = LinearAlgebra::distributed::Vector<double>;
-
-namespace dealii
-{
-  namespace VectorTools
-  {
-    template <int dim, int spacedim, typename VectorType>
-    void
-    VectorTools::get_position_vector(const DoFHandler<dim, spacedim> &dof_handler_dim,
-                                     VectorType &                     euler_vector,
-                                     const Mapping<dim, spacedim> &   mapping)
-    {
-      FEValues<dim, spacedim> fe_eval(
-        mapping,
-        dof_handler_dim.get_fe(),
-        Quadrature<dim>(dof_handler_dim.get_fe().get_unit_support_points()),
-        update_quadrature_points);
-
-      Vector<double> temp;
-
-      for (const auto &cell : dof_handler_dim.active_cell_iterators())
-        {
-          fe_eval.reinit(cell);
-
-          temp.reinit(fe_eval.dofs_per_cell);
-
-          for (const auto q : fe_eval.quadrature_point_indices())
-            {
-              const auto point = fe_eval.quadrature_point(q);
-
-              const unsigned int comp =
-                dof_handler_dim.get_fe().system_to_component_index(q).first;
-
-              temp[q] = point[comp];
-            }
-
-          cell->set_dof_values(temp, euler_vector);
-        }
-    }
-  } // namespace VectorTools
-} // namespace dealii
-
-
 
 template <int spacedim>
 std::tuple<std::vector<std::pair<int, int>>,
