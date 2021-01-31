@@ -185,6 +185,8 @@ namespace dealii
           }
       }
 
+      points.push_back(points.front());
+
       boost::geometry::assign_points(poly, points);
     }
 
