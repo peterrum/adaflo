@@ -260,4 +260,186 @@ namespace dealii
     }
   } // namespace GridTools
 
+
+
+  template <int spacedim>
+  std::tuple<std::vector<std::pair<int, int>>,
+             std::vector<unsigned int>,
+             std::vector<Tensor<1, spacedim, double>>,
+             std::vector<Point<spacedim>>>
+  collect_integration_points(
+    const Triangulation<spacedim, spacedim> &       tria,
+    const Mapping<spacedim, spacedim> &             mapping,
+    const std::vector<Point<spacedim>> &            integration_points,
+    const std::vector<Tensor<1, spacedim, double>> &integration_values)
+  {
+    std::vector<std::pair<Point<spacedim>, Tensor<1, spacedim, double>>>
+      locally_owned_surface_points;
+
+    for (unsigned int i = 0; i < integration_points.size(); ++i)
+      locally_owned_surface_points.emplace_back(integration_points[i],
+                                                integration_values[i]);
+
+    std::vector<
+      std::tuple<Point<spacedim>, Tensor<1, spacedim, double>, std::pair<int, int>>>
+      info;
+
+    const std::vector<bool>                    marked_vertices;
+    const GridTools::Cache<spacedim, spacedim> cache(tria, mapping);
+    const double                               tolerance = 1e-10;
+    auto                                       cell_hint = tria.begin_active();
+
+    for (const auto &point_and_weight : locally_owned_surface_points)
+      {
+        try
+          {
+            const auto first_cell = GridTools::find_active_cell_around_point(
+              cache, point_and_weight.first, cell_hint, marked_vertices, tolerance);
+
+            cell_hint = first_cell.first;
+
+            const auto active_cells_around_point =
+              GridTools::find_all_active_cells_around_point(
+                mapping, tria, point_and_weight.first, tolerance, first_cell);
+
+            for (const auto &cell_and_reference_coordinate : active_cells_around_point)
+              info.emplace_back(
+                cell_and_reference_coordinate.second,
+                point_and_weight.second,
+                std::pair<int, int>(cell_and_reference_coordinate.first->level(),
+                                    cell_and_reference_coordinate.first->index()));
+          }
+        catch (...)
+          {}
+      }
+
+    // step 4: compress data structures
+    std::sort(info.begin(), info.end(), [](const auto &a, const auto &b) {
+      return std::get<2>(a) < std::get<2>(b);
+    });
+
+    std::vector<std::pair<int, int>>         cells;
+    std::vector<unsigned int>                ptrs;
+    std::vector<Tensor<1, spacedim, double>> weights;
+    std::vector<Point<spacedim>>             points;
+
+    std::pair<int, int> dummy{-1, -1};
+
+    for (const auto &i : info)
+      {
+        if (dummy != std::get<2>(i))
+          {
+            dummy = std::get<2>(i);
+            cells.push_back(std::get<2>(i));
+            ptrs.push_back(weights.size());
+          }
+        weights.push_back(std::get<1>(i));
+        points.push_back(std::get<0>(i));
+      }
+    ptrs.push_back(weights.size());
+
+    return {cells, ptrs, weights, points};
+  }
+
+
+
+  template <int dim, int spacedim, typename VectorType>
+  void
+  compute_force_vector_sharp_interface(
+    const Mapping<dim, spacedim> &   surface_mapping,
+    const DoFHandler<dim, spacedim> &surface_dofhandler,
+    const DoFHandler<dim, spacedim> &surface_dofhandler_dim,
+    const Quadrature<dim> &          surface_quadrature,
+    const Mapping<spacedim> &        mapping,
+    const DoFHandler<spacedim> &     dof_handler,
+    const VectorType &               normal_vector,
+    const VectorType &               curvature_vector,
+    VectorType &                     force_vector)
+  {
+    std::vector<Point<spacedim>>             integration_points;
+    std::vector<Tensor<1, spacedim, double>> integration_values;
+
+    {
+      FEValues<dim, spacedim> fe_eval(surface_mapping,
+                                      surface_dofhandler.get_fe(),
+                                      surface_quadrature,
+                                      update_values | update_quadrature_points |
+                                        update_JxW_values);
+      FEValues<dim, spacedim> fe_eval_dim(surface_mapping,
+                                          surface_dofhandler_dim.get_fe(),
+                                          surface_quadrature,
+                                          update_values);
+
+      const auto &tria_surface = surface_dofhandler.get_triangulation();
+
+      for (const auto &cell : tria_surface.active_cell_iterators())
+        {
+          TriaIterator<DoFCellAccessor<dim, spacedim, false>> dof_cell(
+            &tria_surface, cell->level(), cell->index(), &surface_dofhandler);
+          TriaIterator<DoFCellAccessor<dim, spacedim, false>> dof_cell_dim(
+            &tria_surface, cell->level(), cell->index(), &surface_dofhandler_dim);
+
+          fe_eval.reinit(dof_cell);
+          fe_eval_dim.reinit(dof_cell_dim);
+
+          std::vector<double>         curvature_values(fe_eval.dofs_per_cell);
+          std::vector<Vector<double>> normal_values(fe_eval.dofs_per_cell,
+                                                    Vector<double>(spacedim));
+
+          fe_eval.get_function_values(curvature_vector, curvature_values);
+          fe_eval_dim.get_function_values(normal_vector, normal_values);
+
+          for (const auto q : fe_eval_dim.quadrature_point_indices())
+            {
+              Tensor<1, spacedim, double> result;
+              for (unsigned int i = 0; i < spacedim; ++i)
+                result[i] = curvature_values[q] * normal_values[q][i] * fe_eval.JxW(q);
+
+              integration_points.push_back(fe_eval.quadrature_point(q));
+              integration_values.push_back(result);
+            }
+        }
+    }
+
+    const auto [cells, ptrs, weights, points] = collect_integration_points(
+      dof_handler.get_triangulation(), mapping, integration_points, integration_values);
+
+    AffineConstraints<double> constraints; // TODO: use the right ones
+
+    FEPointEvaluation<spacedim, spacedim> phi_normal_force(mapping, dof_handler.get_fe());
+
+    std::vector<double>                  buffer;
+    std::vector<types::global_dof_index> local_dof_indices;
+
+    for (unsigned int i = 0; i < cells.size(); ++i)
+      {
+        typename DoFHandler<spacedim>::active_cell_iterator cell = {
+          &dof_handler.get_triangulation(),
+          cells[i].first,
+          cells[i].second,
+          &dof_handler};
+
+        const unsigned int n_dofs_per_cell = cell->get_fe().n_dofs_per_cell();
+
+        local_dof_indices.resize(n_dofs_per_cell);
+        buffer.resize(n_dofs_per_cell);
+
+        cell->get_dof_indices(local_dof_indices);
+
+        const unsigned int n_points = ptrs[i + 1] - ptrs[i];
+
+        const ArrayView<const Point<spacedim>> unit_points(points.data() + ptrs[i],
+                                                           n_points);
+        const ArrayView<const Tensor<1, spacedim, double>> JxW(weights.data() + ptrs[i],
+                                                               n_points);
+
+        for (unsigned int q = 0; q < n_points; ++q)
+          phi_normal_force.submit_value(JxW[q], q);
+
+        phi_normal_force.integrate(cell, unit_points, buffer, EvaluationFlags::values);
+
+        constraints.distribute_local_to_global(buffer, local_dof_indices, force_vector);
+      }
+  }
+
 } // namespace dealii

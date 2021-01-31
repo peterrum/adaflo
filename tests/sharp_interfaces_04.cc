@@ -103,12 +103,15 @@ public:
                        Triangulation<dim - 1, dim> &surface_mesh)
     : navier_stokes_solver(navier_stokes_solver)
     , euler_dofhandler(surface_mesh)
+    , surface_dofhandler(surface_mesh)
   {
     const unsigned int fe_degree      = 3;
     const unsigned int mapping_degree = fe_degree;
 
     FESystem<dim - 1, dim> euler_fe(FE_Q<dim - 1, dim>(fe_degree), dim);
     euler_dofhandler.distribute_dofs(euler_fe);
+
+    surface_dofhandler.distribute_dofs(FE_Q<dim - 1, dim>(fe_degree));
 
     euler_vector.reinit(euler_dofhandler.n_dofs());
     VectorTools::get_position_vector(euler_dofhandler,
@@ -125,8 +128,8 @@ public:
   {
     this->move_surface_mesh();
     this->update_phases();
-    this->update_surface_tension();
     this->update_gravity_force();
+    this->update_surface_tension();
 
     navier_stokes_solver.get_constraints_u().set_zero(
       navier_stokes_solver.user_rhs.block(0));
@@ -215,7 +218,21 @@ private:
 
   void
   update_surface_tension()
-  {}
+  {
+    VectorType normal_vector;
+    VectorType curvature_vector;
+
+    compute_force_vector_sharp_interface(*euler_mapping,
+                                         surface_dofhandler,
+                                         euler_dofhandler,
+                                         QGauss<dim - 1>(
+                                           euler_dofhandler.get_fe().degree + 1),
+                                         navier_stokes_solver.mapping,
+                                         navier_stokes_solver.get_dof_handler_u(),
+                                         normal_vector,
+                                         curvature_vector,
+                                         navier_stokes_solver.user_rhs.block(0));
+  }
 
   void
   update_gravity_force()
@@ -253,6 +270,7 @@ private:
 
   // surface mesh
   DoFHandler<dim - 1, dim>               euler_dofhandler;
+  DoFHandler<dim - 1, dim>               surface_dofhandler;
   VectorType                             euler_vector;
   std::shared_ptr<Mapping<dim - 1, dim>> euler_mapping;
 };
