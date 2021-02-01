@@ -806,4 +806,23 @@ namespace dealii
     VectorType curvature_vector;
   };
 
+  template <int dim>
+  class MixedLevelSetSolver : public SharpInterfaceSolver
+  {
+  public:
+    void
+    advance_time_step() override
+    {
+      AssertThrow(false, ExcNotImplemented());
+    }
+
+    void
+    output_solution(const std::string &output_filename) override
+    {
+      AssertThrow(false, ExcNotImplemented());
+
+      (void)output_filename;
+    }
+  };
+
 } // namespace dealii

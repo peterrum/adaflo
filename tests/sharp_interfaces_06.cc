@@ -41,9 +41,20 @@ struct TwoPhaseParameters : public FlowParameters
   {
     ParameterHandler prm;
     FlowParameters::declare_parameters(prm);
+    prm.enter_subsection("Problem-specific");
+    prm.declare_entry("two-phase method",
+                      "front tracking",
+                      Patterns::Selection("front tracking|mixed level set"),
+                      "Defines the two-phase method to be used");
+    prm.leave_subsection();
     check_for_file(parameter_filename, prm);
     parse_parameters(parameter_filename, prm);
+    prm.enter_subsection("Problem-specific");
+    solver_method = prm.get("two-phase method");
+    prm.leave_subsection();
   }
+
+  std::string solver_method;
 };
 
 template <int dim>
@@ -94,7 +105,14 @@ MicroFluidicProblem<dim>::run()
   surface_mesh.refine_global(5);
 
   std::unique_ptr<SharpInterfaceSolver> solver;
-  solver = std::make_unique<FrontTrackingSolver<dim>>(navier_stokes_solver, surface_mesh);
+
+  if (parameters.solver_method == "front tracking")
+    solver =
+      std::make_unique<FrontTrackingSolver<dim>>(navier_stokes_solver, surface_mesh);
+  else if (parameters.solver_method == "mixed level set")
+    solver = std::make_unique<MixedLevelSetSolver<dim>>();
+  else
+    AssertThrow(false, ExcNotImplemented());
 
   solver->output_solution(parameters.output_filename);
 
