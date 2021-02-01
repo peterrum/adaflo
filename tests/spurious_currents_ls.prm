@@ -53,6 +53,6 @@ end
 subsection Output options
   set output filename = output-spurious_currents_ls/data
   set output verbosity = 1
-  set output frequency = 0.05
-  set output vtk files = 0
+  set output frequency = 0.01
+  set output vtk files = 1
 end
