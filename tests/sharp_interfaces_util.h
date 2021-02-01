@@ -599,9 +599,11 @@ namespace dealii
     {
       // background mesh
       {
-        navier_stokes_solver.output_solution(output_filename);
+        DataOutBase::VtkFlags flags;
+        flags.write_higher_order_cells = true;
 
         DataOut<dim> data_out;
+        data_out.set_flags(flags);
 
         std::vector<DataComponentInterpretation::DataComponentInterpretation>
           vector_component_interpretation(
@@ -623,7 +625,9 @@ namespace dealii
                                  navier_stokes_solver.solution.block(1),
                                  "pressure");
 
-        data_out.build_patches(navier_stokes_solver.mapping, 1 /*TODO*/);
+        data_out.build_patches(navier_stokes_solver.mapping,
+                               navier_stokes_solver.get_dof_handler_u().get_fe().degree +
+                                 1);
 
         navier_stokes_solver.write_data_output(
           output_filename,

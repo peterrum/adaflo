@@ -53,7 +53,11 @@ test()
   const unsigned int n_refinements  = 5;
 
   Triangulation<dim, spacedim> tria;
+#if false
   GridGenerator::hyper_sphere(tria, Point<spacedim>(), 0.5);
+#else
+  GridGenerator::hyper_sphere(tria, Point<spacedim>(0.02, 0.03), 0.5);
+#endif
   tria.refine_global(n_refinements);
 
   // quadrature rule and FE for curvature
@@ -84,12 +88,24 @@ test()
   compute_curvature(
     mapping, dof_handler_dim, dof_handler, quadrature, normal_vector, curvature_vector);
 
+#if false
   const unsigned int background_n_global_refinements = 6;
-  const unsigned int background_fe_degree            = 1;
+#else
+  const unsigned int background_n_global_refinements = 80;
+#endif
+  const unsigned int background_fe_degree = 2;
 
   Triangulation<spacedim> background_tria;
+#if false
   GridGenerator::hyper_cube(background_tria, -1.0, +1.0);
-  background_tria.refine_global(background_n_global_refinements);
+#else
+  GridGenerator::subdivided_hyper_cube(background_tria,
+                                       background_n_global_refinements,
+                                       -2.5,
+                                       2.5);
+#endif
+  if (background_n_global_refinements < 20)
+    background_tria.refine_global(background_n_global_refinements);
 
   FESystem<spacedim>   background_fe(FE_Q<spacedim>{background_fe_degree}, spacedim);
   DoFHandler<spacedim> background_dof_handler(background_tria);
