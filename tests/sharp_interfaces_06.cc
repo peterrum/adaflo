@@ -93,15 +93,16 @@ MicroFluidicProblem<dim>::run()
   GridGenerator::hyper_sphere(surface_mesh, Point<dim>(0.02, 0.03), 0.5);
   surface_mesh.refine_global(5);
 
-  SharpInterfaceSolver<dim> solver(navier_stokes_solver, surface_mesh);
+  std::unique_ptr<SharpInterfaceSolver> solver;
+  solver = std::make_unique<FrontTrackingSolver<dim>>(navier_stokes_solver, surface_mesh);
 
-  solver.output_solution(parameters.output_filename);
+  solver->output_solution(parameters.output_filename);
 
   while (navier_stokes_solver.time_stepping.at_end() == false)
     {
-      solver.advance_time_step();
+      solver->advance_time_step();
 
-      solver.output_solution(parameters.output_filename);
+      solver->output_solution(parameters.output_filename);
     }
 }
 

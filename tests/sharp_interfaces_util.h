@@ -547,14 +547,26 @@ namespace dealii
 
 
 
-  template <int dim>
   class SharpInterfaceSolver
+  {
+  public:
+    virtual void
+    advance_time_step() = 0;
+
+    virtual void
+    output_solution(const std::string &output_filename) = 0;
+  };
+
+
+
+  template <int dim>
+  class FrontTrackingSolver : public SharpInterfaceSolver
   {
   public:
     using VectorType = LinearAlgebra::distributed::Vector<double>;
 
-    SharpInterfaceSolver(NavierStokes<dim> &          navier_stokes_solver,
-                         Triangulation<dim - 1, dim> &surface_mesh)
+    FrontTrackingSolver(NavierStokes<dim> &          navier_stokes_solver,
+                        Triangulation<dim - 1, dim> &surface_mesh)
       : navier_stokes_solver(navier_stokes_solver)
       , euler_dofhandler(surface_mesh)
       , surface_dofhandler(surface_mesh)
@@ -582,7 +594,7 @@ namespace dealii
     }
 
     void
-    advance_time_step()
+    advance_time_step() override
     {
       this->move_surface_mesh();
       this->update_phases();
@@ -595,7 +607,7 @@ namespace dealii
     }
 
     void
-    output_solution(const std::string &output_filename)
+    output_solution(const std::string &output_filename) override
     {
       // background mesh
       {
