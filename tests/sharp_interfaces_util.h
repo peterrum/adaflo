@@ -575,6 +575,10 @@ namespace dealii
       euler_mapping =
         std::make_shared<MappingFEField<dim - 1, dim, VectorType>>(euler_dofhandler,
                                                                    euler_vector);
+
+      this->update_phases();
+      this->update_gravity_force();
+      this->update_surface_tension();
     }
 
     void
@@ -596,6 +600,37 @@ namespace dealii
       // background mesh
       {
         navier_stokes_solver.output_solution(output_filename);
+
+        DataOut<dim> data_out;
+
+        std::vector<DataComponentInterpretation::DataComponentInterpretation>
+          vector_component_interpretation(
+            dim, DataComponentInterpretation::component_is_part_of_vector);
+
+        navier_stokes_solver.solution.update_ghost_values();
+
+        data_out.add_data_vector(navier_stokes_solver.get_dof_handler_u(),
+                                 navier_stokes_solver.solution.block(0),
+                                 std::vector<std::string>(dim, "velocity"),
+                                 vector_component_interpretation);
+
+        data_out.add_data_vector(navier_stokes_solver.get_dof_handler_u(),
+                                 navier_stokes_solver.user_rhs.block(0),
+                                 std::vector<std::string>(dim, "user_rhs"),
+                                 vector_component_interpretation);
+
+        data_out.add_data_vector(navier_stokes_solver.get_dof_handler_p(),
+                                 navier_stokes_solver.solution.block(1),
+                                 "pressure");
+
+        data_out.build_patches(navier_stokes_solver.mapping, 1 /*TODO*/);
+
+        navier_stokes_solver.write_data_output(
+          output_filename,
+          navier_stokes_solver.time_stepping,
+          navier_stokes_solver.get_parameters().output_frequency,
+          navier_stokes_solver.get_dof_handler_u().get_triangulation(),
+          data_out);
       }
 
       // surface mesh
@@ -604,7 +639,8 @@ namespace dealii
 
         DataOut<dim - 1, DoFHandler<dim - 1, dim>> data_out;
         data_out.set_flags(flags);
-        data_out.attach_dof_handler(euler_dofhandler);
+        data_out.add_data_vector(surface_dofhandler, curvature_vector, "curvature");
+        data_out.add_data_vector(euler_dofhandler, normal_vector, "normal");
 
         data_out.build_patches(
           *euler_mapping,
@@ -678,10 +714,10 @@ namespace dealii
     void
     update_surface_tension()
     {
-      return; // TODO: not working
+      // return; // TODO: not working
 
-      VectorType normal_vector(euler_dofhandler.n_dofs());
-      VectorType curvature_vector(surface_dofhandler.n_dofs());
+      normal_vector.reinit(euler_dofhandler.n_dofs());
+      curvature_vector.reinit(surface_dofhandler.n_dofs());
 
       compute_normal(*euler_mapping, euler_dofhandler, normal_vector);
       compute_curvature(*euler_mapping,
@@ -749,6 +785,9 @@ namespace dealii
     DoFHandler<dim - 1, dim>               surface_dofhandler;
     VectorType                             euler_vector;
     std::shared_ptr<Mapping<dim - 1, dim>> euler_mapping;
+
+    VectorType normal_vector;
+    VectorType curvature_vector;
   };
 
 } // namespace dealii
