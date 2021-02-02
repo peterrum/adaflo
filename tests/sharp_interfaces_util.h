@@ -809,6 +809,26 @@ namespace dealii
 
 
   template <int dim>
+  class LevelSetSolver
+  {
+  public:
+    using VectorType = LinearAlgebra::distributed::Vector<double>;
+
+    LevelSetSolver()
+    {}
+
+    void
+    solve()
+    {
+      AssertThrow(false, ExcNotImplemented());
+    }
+
+  private:
+  };
+
+
+
+  template <int dim>
   class MixedLevelSetSolver : public SharpInterfaceSolver
   {
   public:
@@ -827,6 +847,8 @@ namespace dealii
     void
     advance_time_step() override
     {
+      level_set_solver.solve();
+
       this->move_surface_mesh();
       this->update_phases();
       this->update_gravity_force();
@@ -872,6 +894,8 @@ namespace dealii
 
     // background mesh
     NavierStokes<dim> &navier_stokes_solver;
+
+    LevelSetSolver<dim> level_set_solver;
 
     // surface mesh
     DoFHandler<dim - 1, dim> euler_dofhandler;
