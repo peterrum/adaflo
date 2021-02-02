@@ -823,7 +823,28 @@ namespace dealii
       AssertThrow(false, ExcNotImplemented());
     }
 
+    const VectorType &
+    get_level_set_vector()
+    {
+      return ls_vector;
+    }
+
+    const VectorType &
+    get_normal_vector()
+    {
+      return normal_vector;
+    }
+
+    const VectorType &
+    get_curvature_vector()
+    {
+      return curvature_vector;
+    }
+
   private:
+    VectorType ls_vector;
+    VectorType normal_vector;
+    VectorType curvature_vector;
   };
 
 
@@ -905,10 +926,13 @@ namespace dealii
           for (unsigned int cell = macro_cells.first; cell < macro_cells.second; ++cell)
             {
               phi.reinit(cell);
+              phi.gather_evaluate(level_set_solver.get_level_set_vector(),
+                                  EvaluationFlags::values);
 
               for (unsigned int q = 0; q < phi.n_q_points; ++q)
                 {
-                  const auto indicator = 1.0; // fix indicator based on LS
+                  const auto indicator =
+                    phi.get_value(q); // TODO: fix indicator -> Heaviside
 
                   navier_stokes_solver.get_matrix().begin_densities(cell)[q] =
                     density + density_diff * indicator;
