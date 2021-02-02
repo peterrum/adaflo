@@ -1129,22 +1129,17 @@ namespace dealii
       if (density_diff == 0.0 && viscosity_diff == 0.0)
         return; // nothing to do
 
-      boost::geometry::model::polygon<boost::geometry::model::d2::point_xy<double>>
-        polygon;
-      GridTools::construct_polygon(*euler_mapping, euler_dofhandler, polygon);
-
       double dummy;
 
       // TODO: select proper MatrixFree object and set right dof/quad index
-      navier_stokes_solver.matrix_free->template cell_loop<double, double>(
-        [&](const auto &matrix_free, auto &, const auto &, auto macro_cells) {
+      navier_stokes_solver.matrix_free->template cell_loop<double, VectorType>(
+        [&](const auto &matrix_free, auto &, const auto &src, auto macro_cells) {
           FEEvaluation<dim, -1, 0, 1, double> phi(matrix_free, 0, 0);
 
           for (unsigned int cell = macro_cells.first; cell < macro_cells.second; ++cell)
             {
               phi.reinit(cell);
-              phi.gather_evaluate(level_set_solver.get_level_set_vector(),
-                                  EvaluationFlags::values);
+              phi.gather_evaluate(src, EvaluationFlags::values);
 
               for (unsigned int q = 0; q < phi.n_q_points; ++q)
                 {
@@ -1159,7 +1154,7 @@ namespace dealii
             }
         },
         dummy,
-        dummy);
+        level_set_solver.get_level_set_vector());
     }
 
     void
