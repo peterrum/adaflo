@@ -644,6 +644,7 @@ namespace dealii
                                        const Quadrature<dim - 1> &        surface_quad,
                                        const Mapping<dim> &               mapping,
                                        const DoFHandler<dim> &            dof_handler,
+                                       const DoFHandler<dim> &            dof_handler_dim,
                                        const BlockVectorType &normal_vector_field,
                                        const VectorType &     curvature_solution,
                                        VectorType &           force_vector)
@@ -681,6 +682,12 @@ namespace dealii
           cells[i].first,
           cells[i].second,
           &dof_handler};
+
+        typename DoFHandler<dim>::active_cell_iterator cell_dim = {
+          &dof_handler.get_triangulation(),
+          cells[i].first,
+          cells[i].second,
+          &dof_handler_dim};
 
         const unsigned int n_dofs_per_component = cell->get_fe().n_dofs_per_cell();
 
@@ -736,19 +743,12 @@ namespace dealii
                                    buffer_dim,
                                    EvaluationFlags::values);
 
-        // scatter force
-        for (int i = 0; i < dim; ++i)
-          {
-            for (unsigned int c = 0; c < n_dofs_per_component; ++c)
-              buffer[c] = buffer_dim[c * dim + i];
+        local_dof_indices.resize(n_dofs_per_component * dim);
+        cell_dim->get_dof_indices(local_dof_indices);
 
-            (void)force_vector;
-
-            // TODO!!!
-            // constraints.distribute_local_to_global(buffer,
-            //                                       local_dof_indices,
-            //                                       force_vector.block(i));
-          }
+        constraints.distribute_local_to_global(buffer_dim,
+                                               local_dof_indices /*TODO*/,
+                                               force_vector);
       }
   }
 
@@ -1157,7 +1157,8 @@ namespace dealii
     void
     update_surface_tension()
     {
-      DoFHandler<dim> dof_handler; // TODO
+      DoFHandler<dim> dof_handler;     // TODO
+      DoFHandler<dim> dof_handler_dim; // TODO
 
       compute_force_vector_sharp_interface<dim>(surface_dofhandler.get_triangulation(),
                                                 *euler_mapping,
@@ -1166,6 +1167,7 @@ namespace dealii
                                                   surface_dofhandler.get_fe().degree + 1),
                                                 navier_stokes_solver.mapping,
                                                 dof_handler,
+                                                dof_handler_dim,
                                                 level_set_solver.get_normal_vector(),
                                                 level_set_solver.get_curvature_vector(),
                                                 navier_stokes_solver.user_rhs.block(0));

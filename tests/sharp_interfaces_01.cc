@@ -41,6 +41,7 @@ using BlockVectorType = LinearAlgebra::distributed::BlockVector<double>;
 static const unsigned int dof_index_ls        = 0;
 static const unsigned int dof_index_normal    = 1;
 static const unsigned int dof_index_curvature = 2;
+static const unsigned int dof_index_force     = 3;
 static const unsigned int quad_index          = 0;
 
 template <int dim>
@@ -309,14 +310,16 @@ test()
   GridGenerator::hyper_cube(tria, -1.0, +1.0);
   tria.refine_global(n_global_refinements);
 
-  FE_Q<dim>       fe(fe_degree);
   DoFHandler<dim> dof_handler(tria);
-  dof_handler.distribute_dofs(fe);
+  dof_handler.distribute_dofs(FE_Q<dim>(fe_degree));
+
+  DoFHandler<dim> dof_handler_dim(tria);
+  dof_handler_dim.distribute_dofs(FESystem<dim>(FE_Q<dim>(fe_degree), dim));
 
   MappingQ1<dim> mapping;
 
   AffineConstraints<double> constraints, constraints_normals, hanging_node_constraints,
-    constraints_curvature;
+    constraints_curvature, constraints_force;
 
   /** not needed: why?
   VectorTools::interpolate_boundary_values(
@@ -335,6 +338,7 @@ test()
   constraints.close();
   constraints_curvature.close();
   constraints_normals.close();
+  constraints_force.close();
   hanging_node_constraints.close();
 
   QGauss<1> quad(fe_degree + 1);
@@ -343,10 +347,11 @@ test()
 
   const std::vector<const DoFHandler<dim> *> dof_handlers{&dof_handler,
                                                           &dof_handler,
-                                                          &dof_handler};
+                                                          &dof_handler,
+                                                          &dof_handler_dim};
 
   const std::vector<const AffineConstraints<double> *> all_constraints{
-    &constraints, &constraints_normals, &constraints_curvature};
+    &constraints, &constraints_normals, &constraints_curvature, &constraints_force};
 
   const std::vector<Quadrature<1>> quadratures{quad};
 
@@ -361,14 +366,13 @@ test()
 
   matrix_free.initialize_dof_vector(ls_solution, dof_index_ls);
   matrix_free.initialize_dof_vector(curvature_solution, dof_index_curvature);
+  matrix_free.initialize_dof_vector(force_vector_sharp_interface, dof_index_force);
 
   for (unsigned int i = 0; i < dim; ++i)
     {
       matrix_free.initialize_dof_vector(normal_vector_field.block(i), dof_index_normal);
       matrix_free.initialize_dof_vector(force_vector_regularized.block(i),
                                         dof_index_normal);
-      // matrix_free.initialize_dof_vector(force_vector_sharp_interface.block(i),
-      //                                  dof_index_normal);
     }
 
   // initialize level-set
@@ -405,6 +409,7 @@ test()
                                             surface_quad,
                                             mapping,
                                             dof_handler,
+                                            dof_handler_dim,
                                             normal_vector_field,
                                             curvature_solution,
                                             force_vector_sharp_interface);
@@ -432,10 +437,7 @@ test()
                                force_vector_regularized.block(i),
                                "force_re_" + std::to_string(i));
 
-    // for (unsigned int i = 0; i < dim; ++i)
-    //  data_out.add_data_vector(dof_handler,
-    //                           force_vector_sharp_interface.block(i),
-    //                           "force_si_" + std::to_string(i));
+    data_out.add_data_vector(dof_handler_dim, force_vector_sharp_interface, "force_si_");
 
     data_out.build_patches(mapping, fe_degree + 1);
     data_out.write_vtu_with_pvtu_record("./", "sharp_interface_01", 0, MPI_COMM_WORLD);
