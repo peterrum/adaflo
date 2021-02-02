@@ -1050,7 +1050,15 @@ namespace dealii
       return curvature_vector;
     }
 
+    const DoFHandler<dim> &
+    get_dof_handler() const
+    {
+      return dof_handler;
+    }
+
   private:
+    DoFHandler<dim> dof_handler;
+
     VectorType      ls_vector;
     BlockVectorType normal_vector;
     VectorType      curvature_vector;
@@ -1141,7 +1149,7 @@ namespace dealii
               for (unsigned int q = 0; q < phi.n_q_points; ++q)
                 {
                   const auto indicator =
-                    phi.get_value(q); // TODO: fix indicator -> Heaviside
+                    (phi.get_value(q) + 1.0) / 2.0; // TODO: fix indicator -> Heaviside
 
                   navier_stokes_solver.get_matrix().begin_densities(cell)[q] =
                     density + density_diff * indicator;
@@ -1157,17 +1165,14 @@ namespace dealii
     void
     update_surface_tension()
     {
-      DoFHandler<dim> dof_handler;     // TODO
-      DoFHandler<dim> dof_handler_dim; // TODO
-
       compute_force_vector_sharp_interface<dim>(surface_dofhandler.get_triangulation(),
                                                 *euler_mapping,
                                                 surface_dofhandler.get_fe(),
                                                 QGauss<dim - 1>(
                                                   surface_dofhandler.get_fe().degree + 1),
                                                 navier_stokes_solver.mapping,
-                                                dof_handler,
-                                                dof_handler_dim,
+                                                level_set_solver.get_dof_handler(),
+                                                navier_stokes_solver.get_dof_handler_u(),
                                                 level_set_solver.get_normal_vector(),
                                                 level_set_solver.get_curvature_vector(),
                                                 navier_stokes_solver.user_rhs.block(0));
