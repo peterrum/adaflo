@@ -14,6 +14,7 @@
 // --------------------------------------------------------------------------
 
 #include <deal.II/fe/fe_point_evaluation.h>
+#include <deal.II/fe/mapping_fe_field.h>
 
 #include <deal.II/grid/grid_tools_cache.h>
 
@@ -547,6 +548,212 @@ namespace dealii
 
 
 
+  template <int dim, int spacedim>
+  std::tuple<std::vector<std::pair<int, int>>,
+             std::vector<unsigned int>,
+             std::vector<double>,
+             std::vector<Point<spacedim>>>
+  collect_evaluation_points(const Triangulation<dim, spacedim> &     surface_mesh,
+                            const Mapping<dim, spacedim> &           surface_mapping,
+                            const FiniteElement<dim, spacedim> &     surface_fe,
+                            const Quadrature<dim> &                  surface_quad,
+                            const Triangulation<spacedim, spacedim> &tria,
+                            const Mapping<spacedim, spacedim> &      mapping)
+  {
+    // step 1: determine quadrature points in real coordinate system and quadrature weight
+    std::vector<std::pair<Point<spacedim>, double>> locally_owned_surface_points;
+
+    FEValues<dim, spacedim> fe_eval(surface_mapping,
+                                    surface_fe,
+                                    surface_quad,
+                                    update_quadrature_points | update_JxW_values);
+
+    for (const auto &cell : surface_mesh.active_cell_iterators())
+      {
+        if (cell->is_locally_owned() == false)
+          continue;
+
+        fe_eval.reinit(cell);
+
+        for (const auto q : fe_eval.quadrature_point_indices())
+          locally_owned_surface_points.emplace_back(fe_eval.quadrature_point(q),
+                                                    fe_eval.JxW(q));
+      }
+
+    // step 2 communicate (TODO)
+
+    // step 3: convert quadrature points to a pair of cells and reference cell quadrature
+    // point
+    std::vector<std::tuple<Point<spacedim>, double, std::pair<int, int>>> info;
+
+    const std::vector<bool>                    marked_vertices;
+    const GridTools::Cache<spacedim, spacedim> cache(tria, mapping);
+    const double                               tolerance = 1e-10;
+    auto                                       cell_hint = tria.begin_active();
+
+    for (const auto &point_and_weight : locally_owned_surface_points)
+      {
+        const auto cell_and_reference_coordinate =
+          GridTools::find_active_cell_around_point(
+            cache, point_and_weight.first, cell_hint, marked_vertices, tolerance);
+
+        cell_hint = cell_and_reference_coordinate.first;
+
+        info.emplace_back(
+          cell_and_reference_coordinate.second,
+          point_and_weight.second,
+          std::pair<int, int>(cell_and_reference_coordinate.first->level(),
+                              cell_and_reference_coordinate.first->index()));
+      }
+
+    // step 4: compress data structures
+    std::sort(info.begin(), info.end(), [](const auto &a, const auto &b) {
+      return std::get<2>(a) < std::get<2>(b);
+    });
+
+    std::vector<std::pair<int, int>> cells;
+    std::vector<unsigned int>        ptrs;
+    std::vector<double>              weights;
+    std::vector<Point<spacedim>>     points;
+
+    std::pair<int, int> dummy{-1, -1};
+
+    for (const auto &i : info)
+      {
+        if (dummy != std::get<2>(i))
+          {
+            dummy = std::get<2>(i);
+            cells.push_back(std::get<2>(i));
+            ptrs.push_back(weights.size());
+          }
+        weights.push_back(std::get<1>(i));
+        points.push_back(std::get<0>(i));
+      }
+    ptrs.push_back(weights.size());
+
+    return {cells, ptrs, weights, points};
+  }
+
+
+
+  template <int dim, typename VectorType, typename BlockVectorType>
+  void
+  compute_force_vector_sharp_interface(const Triangulation<dim - 1, dim> &surface_mesh,
+                                       const Mapping<dim - 1, dim> &      surface_mapping,
+                                       const FiniteElement<dim - 1, dim> &surface_fe,
+                                       const Quadrature<dim - 1> &        surface_quad,
+                                       const Mapping<dim> &               mapping,
+                                       const DoFHandler<dim> &            dof_handler,
+                                       const BlockVectorType &normal_vector_field,
+                                       const VectorType &     curvature_solution,
+                                       VectorType &           force_vector)
+  {
+    // step 1) collect all locally-relevant surface quadrature points (cell,
+    // reference-cell position,
+    //  quadrature weight)
+    const auto [cells, ptrs, weights, points] =
+      collect_evaluation_points(surface_mesh,
+                                surface_mapping,
+                                surface_fe,
+                                surface_quad,
+                                dof_handler.get_triangulation(),
+                                mapping);
+
+    // step 2) loop over all cells and evaluate curvature and normal in the cell-local
+    // quadrature points
+    //   and test with all test functions of the cell
+
+    AffineConstraints<double> constraints; // TODO: use the right ones
+
+    FEPointEvaluation<1, dim> phi_curvature(mapping, dof_handler.get_fe());
+
+    FESystem<dim>               fe_dim(dof_handler.get_fe(), dim);
+    FEPointEvaluation<dim, dim> phi_normal_force(mapping, fe_dim);
+
+    std::vector<double>                  buffer;
+    std::vector<double>                  buffer_dim;
+    std::vector<types::global_dof_index> local_dof_indices;
+
+    for (unsigned int i = 0; i < cells.size(); ++i)
+      {
+        typename DoFHandler<dim>::active_cell_iterator cell = {
+          &dof_handler.get_triangulation(),
+          cells[i].first,
+          cells[i].second,
+          &dof_handler};
+
+        const unsigned int n_dofs_per_component = cell->get_fe().n_dofs_per_cell();
+
+        local_dof_indices.resize(n_dofs_per_component);
+        buffer.resize(n_dofs_per_component);
+        buffer_dim.resize(n_dofs_per_component * dim);
+
+        cell->get_dof_indices(local_dof_indices);
+
+        const unsigned int n_points = ptrs[i + 1] - ptrs[i];
+
+        const ArrayView<const Point<dim>> unit_points(points.data() + ptrs[i], n_points);
+        const ArrayView<const double>     JxW(weights.data() + ptrs[i], n_points);
+
+        // gather curvature
+        constraints.get_dof_values(curvature_solution,
+                                   local_dof_indices.begin(),
+                                   buffer.begin(),
+                                   buffer.end());
+
+        // evaluate curvature
+        phi_curvature.evaluate(cell,
+                               unit_points,
+                               make_array_view(buffer),
+                               EvaluationFlags::values);
+
+        // gather normal
+        for (int i = 0; i < dim; ++i)
+          {
+            constraints.get_dof_values(normal_vector_field.block(i),
+                                       local_dof_indices.begin(),
+                                       buffer.begin(),
+                                       buffer.end());
+            for (unsigned int c = 0; c < n_dofs_per_component; ++c)
+              buffer_dim[c * dim + i] = buffer[c];
+          }
+
+        // evaluate normal
+        phi_normal_force.evaluate(cell, unit_points, buffer_dim, EvaluationFlags::values);
+
+        // quadrature loop
+        for (unsigned int q = 0; q < n_points; ++q)
+          {
+            const auto normal =
+              phi_normal_force.get_value(q) / phi_normal_force.get_value(q).norm();
+            phi_normal_force.submit_value(normal * phi_curvature.get_value(q) * JxW[q],
+                                          q);
+          }
+
+        // integrate force
+        phi_normal_force.integrate(cell,
+                                   unit_points,
+                                   buffer_dim,
+                                   EvaluationFlags::values);
+
+        // scatter force
+        for (int i = 0; i < dim; ++i)
+          {
+            for (unsigned int c = 0; c < n_dofs_per_component; ++c)
+              buffer[c] = buffer_dim[c * dim + i];
+
+            (void)force_vector;
+
+            // TODO!!!
+            // constraints.distribute_local_to_global(buffer,
+            //                                       local_dof_indices,
+            //                                       force_vector.block(i));
+          }
+      }
+  }
+
+
+
   class SharpInterfaceSolver
   {
   public:
@@ -812,9 +1019,11 @@ namespace dealii
   class LevelSetSolver
   {
   public:
-    using VectorType = LinearAlgebra::distributed::Vector<double>;
+    using VectorType      = LinearAlgebra::distributed::Vector<double>;
+    using BlockVectorType = LinearAlgebra::distributed::BlockVector<double>;
 
     LevelSetSolver()
+      : normal_vector(dim)
     {}
 
     void
@@ -829,7 +1038,7 @@ namespace dealii
       return ls_vector;
     }
 
-    const VectorType &
+    const BlockVectorType &
     get_normal_vector()
     {
       return normal_vector;
@@ -842,9 +1051,9 @@ namespace dealii
     }
 
   private:
-    VectorType ls_vector;
-    VectorType normal_vector;
-    VectorType curvature_vector;
+    VectorType      ls_vector;
+    BlockVectorType normal_vector;
+    VectorType      curvature_vector;
   };
 
 
@@ -948,7 +1157,18 @@ namespace dealii
     void
     update_surface_tension()
     {
-      AssertThrow(false, ExcNotImplemented());
+      DoFHandler<dim> dof_handler; // TODO
+
+      compute_force_vector_sharp_interface<dim>(surface_dofhandler.get_triangulation(),
+                                                *euler_mapping,
+                                                surface_dofhandler.get_fe(),
+                                                QGauss<dim - 1>(
+                                                  surface_dofhandler.get_fe().degree + 1),
+                                                navier_stokes_solver.mapping,
+                                                dof_handler,
+                                                level_set_solver.get_normal_vector(),
+                                                level_set_solver.get_curvature_vector(),
+                                                navier_stokes_solver.user_rhs.block(0));
     }
 
     void
