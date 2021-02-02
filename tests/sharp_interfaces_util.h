@@ -1028,35 +1028,16 @@ namespace dealii
     using VectorType      = LinearAlgebra::distributed::Vector<double>;
     using BlockVectorType = LinearAlgebra::distributed::BlockVector<double>;
 
+    static const unsigned int dof_index_ls        = 0;
+    static const unsigned int dof_index_normal    = 1;
+    static const unsigned int dof_index_curvature = 2;
+    static const unsigned int quad_index          = 0;
+
     LevelSetSolver()
-      : normal_vector_field(dim)
-    {}
-
-    void
-    solve()
+      : pcout(std::cout, Utilities::MPI::this_mpi_process(MPI_COMM_WORLD) == 0)
+      , normal_vector_field(dim)
+      , normal_vector_rhs(dim)
     {
-      static const unsigned int dof_index_ls        = 0;
-      static const unsigned int dof_index_normal    = 1;
-      static const unsigned int dof_index_curvature = 2;
-      static const unsigned int dof_index_force     = 3;
-      static const unsigned int quad_index          = 0;
-
-      const MatrixFree<dim, double>   matrix_free;
-      const AffineConstraints<double> constraints;
-      const AffineConstraints<double> constraints_normals;
-      const AffineConstraints<double> hanging_node_constraints;
-      const AffineConstraints<double> constraints_curvature;
-
-      ConditionalOStream pcout(std::cout,
-                               Utilities::MPI::this_mpi_process(MPI_COMM_WORLD) == 0);
-
-
-      // vectors
-      BlockVectorType normal_vector_rhs(dim);
-      VectorType      ls_solution_update;
-      VectorType      ls_system_rhs;
-      VectorType      curvature_rhs;
-
       matrix_free.initialize_dof_vector(ls_solution_update, dof_index_ls);
       matrix_free.initialize_dof_vector(ls_system_rhs, dof_index_ls);
       matrix_free.initialize_dof_vector(curvature_rhs, dof_index_curvature);
@@ -1066,7 +1047,6 @@ namespace dealii
 
       // TODO
       const double              dt                         = 0.01;
-      const unsigned int        stab_steps                 = 20;
       std::pair<double, double> last_concentration_range   = {-1, +1};
       bool                      first_reinit_step          = true;
       double                    epsilon                    = 1.5;
@@ -1080,14 +1060,8 @@ namespace dealii
 
       epsilon_used = epsilon / concentration_subdivisions * epsilon_used;
 
-      // preconditioner
-      DiagonalPreconditioner<double> preconditioner;
-
       initialize_mass_matrix_diagonal(
         matrix_free, hanging_node_constraints, dof_index_ls, quad_index, preconditioner);
-
-      auto projection_matrix     = std::make_shared<BlockMatrixExtension>();
-      auto ilu_projection_matrix = std::make_shared<BlockILUExtension>();
 
       initialize_projection_matrix(matrix_free,
                                    constraints_normals,
@@ -1107,18 +1081,19 @@ namespace dealii
       nomral_parameter.epsilon                 = epsilon;
       nomral_parameter.approximate_projections = false;
 
-      LevelSetOKZSolverComputeNormal<dim> normal_operator(normal_vector_field,
-                                                          normal_vector_rhs,
-                                                          ls_solution,
-                                                          cell_diameters,
-                                                          epsilon_used,
-                                                          minimal_edge_length,
-                                                          constraints_normals,
-                                                          nomral_parameter,
-                                                          matrix_free,
-                                                          preconditioner,
-                                                          projection_matrix,
-                                                          ilu_projection_matrix);
+      normal_operator =
+        std::make_unique<LevelSetOKZSolverComputeNormal<dim>>(normal_vector_field,
+                                                              normal_vector_rhs,
+                                                              ls_solution,
+                                                              cell_diameters,
+                                                              epsilon_used,
+                                                              minimal_edge_length,
+                                                              constraints_normals,
+                                                              nomral_parameter,
+                                                              matrix_free,
+                                                              preconditioner,
+                                                              projection_matrix,
+                                                              ilu_projection_matrix);
 
       // reinitialization operator
       LevelSetOKZSolverReinitializationParameter reinit_parameters;
@@ -1137,20 +1112,21 @@ namespace dealii
       reinit_parameters.time.time_step_size_max   = dt;
       reinit_parameters.time.time_step_size_min   = dt;
 
-      LevelSetOKZSolverReinitialization<dim> reinit(normal_vector_field,
-                                                    cell_diameters,
-                                                    epsilon_used,
-                                                    minimal_edge_length,
-                                                    constraints,
-                                                    ls_solution_update,
-                                                    ls_solution,
-                                                    ls_system_rhs,
-                                                    pcout,
-                                                    preconditioner,
-                                                    last_concentration_range,
-                                                    reinit_parameters,
-                                                    first_reinit_step,
-                                                    matrix_free);
+      reinit =
+        std::make_unique<LevelSetOKZSolverReinitialization<dim>>(normal_vector_field,
+                                                                 cell_diameters,
+                                                                 epsilon_used,
+                                                                 minimal_edge_length,
+                                                                 constraints,
+                                                                 ls_solution_update,
+                                                                 ls_solution,
+                                                                 ls_system_rhs,
+                                                                 pcout,
+                                                                 preconditioner,
+                                                                 last_concentration_range,
+                                                                 reinit_parameters,
+                                                                 first_reinit_step,
+                                                                 matrix_free);
 
       // curvature operator
       LevelSetOKZSolverComputeCurvatureParameter parameters_curvature;
@@ -1162,31 +1138,40 @@ namespace dealii
       parameters_curvature.approximate_projections = false;
       parameters_curvature.curvature_correction    = true;
 
-      LevelSetOKZSolverComputeCurvature<dim> curvature_operator(cell_diameters,
-                                                                normal_vector_field,
-                                                                constraints_curvature,
-                                                                constraints,
-                                                                epsilon_used,
-                                                                curvature_rhs,
-                                                                parameters_curvature,
-                                                                curvature_solution,
-                                                                ls_solution,
-                                                                matrix_free,
-                                                                preconditioner,
-                                                                projection_matrix,
-                                                                ilu_projection_matrix);
+      curvature_operator =
+        std::make_unique<LevelSetOKZSolverComputeCurvature<dim>>(cell_diameters,
+                                                                 normal_vector_field,
+                                                                 constraints_curvature,
+                                                                 constraints,
+                                                                 epsilon_used,
+                                                                 curvature_rhs,
+                                                                 parameters_curvature,
+                                                                 curvature_solution,
+                                                                 ls_solution,
+                                                                 matrix_free,
+                                                                 preconditioner,
+                                                                 projection_matrix,
+                                                                 ilu_projection_matrix);
+    }
+
+    void
+    solve()
+    {
+      // TODO
+      const double       dt         = 0.01;
+      const unsigned int stab_steps = 20;
 
       // perform reinitialization
       constraints.set_zero(ls_solution);
-      reinit.reinitialize(dt, stab_steps, 0, [&normal_operator](const bool fast) {
-        normal_operator.compute_normal(fast);
+      reinit->reinitialize(dt, stab_steps, 0, [this](const bool fast) {
+        normal_operator->compute_normal(fast);
       });
 
       // compute normal vectors
-      normal_operator.compute_normal(false);
+      normal_operator->compute_normal(false);
 
       // compute curvature
-      curvature_operator.compute_curvature();
+      curvature_operator->compute_curvature();
 
       constraints.distribute(ls_solution);
       for (unsigned int i = 0; i < dim; ++i)
@@ -1219,11 +1204,33 @@ namespace dealii
     }
 
   private:
+    ConditionalOStream pcout;
+
     DoFHandler<dim> dof_handler;
+
+    MatrixFree<dim, double>   matrix_free;
+    AffineConstraints<double> constraints;
+    AffineConstraints<double> constraints_normals;
+    AffineConstraints<double> hanging_node_constraints;
+    AffineConstraints<double> constraints_curvature;
+
 
     VectorType      ls_solution;
     BlockVectorType normal_vector_field;
     VectorType      curvature_solution;
+
+    BlockVectorType normal_vector_rhs;
+    VectorType      ls_solution_update;
+    VectorType      ls_system_rhs;
+    VectorType      curvature_rhs;
+
+    DiagonalPreconditioner<double>        preconditioner;
+    std::shared_ptr<BlockMatrixExtension> projection_matrix;
+    std::shared_ptr<BlockILUExtension>    ilu_projection_matrix;
+
+    std::unique_ptr<LevelSetOKZSolverComputeNormal<dim>>    normal_operator;
+    std::unique_ptr<LevelSetOKZSolverReinitialization<dim>> reinit;
+    std::unique_ptr<LevelSetOKZSolverComputeCurvature<dim>> curvature_operator;
   };
 
 
