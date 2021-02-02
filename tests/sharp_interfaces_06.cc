@@ -133,7 +133,9 @@ MicroFluidicProblem<dim>::run()
     solver =
       std::make_unique<FrontTrackingSolver<dim>>(navier_stokes_solver, surface_mesh);
   else if (parameters.solver_method == "mixed level set")
-    solver = std::make_unique<MixedLevelSetSolver<dim>>(InitialValuesLS<dim>());
+    solver = std::make_unique<MixedLevelSetSolver<dim>>(navier_stokes_solver,
+                                                        surface_mesh,
+                                                        InitialValuesLS<dim>());
   else
     AssertThrow(false, ExcNotImplemented());
 

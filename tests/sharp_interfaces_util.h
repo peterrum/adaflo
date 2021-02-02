@@ -806,11 +806,20 @@ namespace dealii
     VectorType curvature_vector;
   };
 
+
+
   template <int dim>
   class MixedLevelSetSolver : public SharpInterfaceSolver
   {
   public:
-    MixedLevelSetSolver(const Function<dim> &initial_values_ls)
+    using VectorType = LinearAlgebra::distributed::Vector<double>;
+
+    MixedLevelSetSolver(NavierStokes<dim> &          navier_stokes_solver,
+                        Triangulation<dim - 1, dim> &surface_mesh,
+                        const Function<dim> &        initial_values_ls)
+      : navier_stokes_solver(navier_stokes_solver)
+      , euler_dofhandler(surface_mesh)
+      , surface_dofhandler(surface_mesh)
     {
       (void)initial_values_ls;
     }
@@ -818,7 +827,14 @@ namespace dealii
     void
     advance_time_step() override
     {
-      AssertThrow(false, ExcNotImplemented());
+      this->move_surface_mesh();
+      this->update_phases();
+      this->update_gravity_force();
+      this->update_surface_tension();
+
+      navier_stokes_solver.get_constraints_u().set_zero(
+        navier_stokes_solver.user_rhs.block(0));
+      navier_stokes_solver.advance_time_step();
     }
 
     void
@@ -828,6 +844,38 @@ namespace dealii
 
       (void)output_filename;
     }
+
+  private:
+    void
+    move_surface_mesh()
+    {
+      AssertThrow(false, ExcNotImplemented());
+    }
+
+    void
+    update_phases()
+    {
+      AssertThrow(false, ExcNotImplemented());
+    }
+
+    void
+    update_surface_tension()
+    {
+      AssertThrow(false, ExcNotImplemented());
+    }
+
+    void
+    update_gravity_force()
+    {
+      AssertThrow(false, ExcNotImplemented());
+    }
+
+    // background mesh
+    NavierStokes<dim> &navier_stokes_solver;
+
+    // surface mesh
+    DoFHandler<dim - 1, dim> euler_dofhandler;
+    DoFHandler<dim - 1, dim> surface_dofhandler;
   };
 
 } // namespace dealii
