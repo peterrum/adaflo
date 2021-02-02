@@ -871,13 +871,54 @@ namespace dealii
     void
     move_surface_mesh()
     {
-      AssertThrow(false, ExcNotImplemented());
+      VectorTools::update_position_vector(navier_stokes_solver.time_stepping.step_size(),
+                                          navier_stokes_solver.get_dof_handler_u(),
+                                          navier_stokes_solver.mapping,
+                                          navier_stokes_solver.solution.block(0),
+                                          euler_dofhandler,
+                                          *euler_mapping,
+                                          euler_vector);
     }
 
     void
     update_phases()
     {
-      AssertThrow(false, ExcNotImplemented());
+      const auto density        = navier_stokes_solver.get_parameters().density;
+      const auto density_diff   = navier_stokes_solver.get_parameters().density_diff;
+      const auto viscosity      = navier_stokes_solver.get_parameters().viscosity;
+      const auto viscosity_diff = navier_stokes_solver.get_parameters().viscosity_diff;
+
+      if (density_diff == 0.0 && viscosity_diff == 0.0)
+        return; // nothing to do
+
+      boost::geometry::model::polygon<boost::geometry::model::d2::point_xy<double>>
+        polygon;
+      GridTools::construct_polygon(*euler_mapping, euler_dofhandler, polygon);
+
+      double dummy;
+
+      // TODO: select proper MatrixFree object and set right dof/quad index
+      navier_stokes_solver.matrix_free->template cell_loop<double, double>(
+        [&](const auto &matrix_free, auto &, const auto &, auto macro_cells) {
+          FEEvaluation<dim, -1, 0, 1, double> phi(matrix_free, 0, 0);
+
+          for (unsigned int cell = macro_cells.first; cell < macro_cells.second; ++cell)
+            {
+              phi.reinit(cell);
+
+              for (unsigned int q = 0; q < phi.n_q_points; ++q)
+                {
+                  const auto indicator = 1.0; // fix indicator based on LS
+
+                  navier_stokes_solver.get_matrix().begin_densities(cell)[q] =
+                    density + density_diff * indicator;
+                  navier_stokes_solver.get_matrix().begin_viscosities(cell)[q] =
+                    viscosity + viscosity_diff * indicator;
+                }
+            }
+        },
+        dummy,
+        dummy);
     }
 
     void
@@ -889,17 +930,49 @@ namespace dealii
     void
     update_gravity_force()
     {
-      AssertThrow(false, ExcNotImplemented());
+      const auto gravity = navier_stokes_solver.get_parameters().gravity;
+
+      const auto density      = navier_stokes_solver.get_parameters().density;
+      const auto density_diff = navier_stokes_solver.get_parameters().density_diff;
+
+      const bool zero_out = true;
+
+      navier_stokes_solver.matrix_free->template cell_loop<VectorType, std::nullptr_t>(
+        [&](const auto &matrix_free, auto &vec, const auto &, auto macro_cells) {
+          FEEvaluation<dim, -1, 0, dim, double> phi(matrix_free, 0, 0);
+
+          for (unsigned int cell = macro_cells.first; cell < macro_cells.second; ++cell)
+            {
+              phi.reinit(cell);
+
+              for (unsigned int q = 0; q < phi.n_q_points; ++q)
+                {
+                  Tensor<1, dim, VectorizedArray<double>> force;
+
+                  force[dim - 1] -=
+                    gravity *
+                    (density_diff == 0.0 ?
+                       VectorizedArray<double>(density) :
+                       navier_stokes_solver.get_matrix().begin_densities(cell)[q]);
+                  phi.submit_value(force, q);
+                }
+              phi.integrate_scatter(true, false, vec);
+            }
+        },
+        navier_stokes_solver.user_rhs.block(0),
+        nullptr,
+        zero_out);
     }
 
     // background mesh
-    NavierStokes<dim> &navier_stokes_solver;
-
+    NavierStokes<dim> & navier_stokes_solver;
     LevelSetSolver<dim> level_set_solver;
 
     // surface mesh
-    DoFHandler<dim - 1, dim> euler_dofhandler;
-    DoFHandler<dim - 1, dim> surface_dofhandler;
+    DoFHandler<dim - 1, dim>               euler_dofhandler;
+    DoFHandler<dim - 1, dim>               surface_dofhandler;
+    VectorType                             euler_vector;
+    std::shared_ptr<Mapping<dim - 1, dim>> euler_mapping;
   };
 
 } // namespace dealii
