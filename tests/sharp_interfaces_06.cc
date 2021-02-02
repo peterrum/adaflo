@@ -57,6 +57,29 @@ struct TwoPhaseParameters : public FlowParameters
   std::string solver_method;
 };
 
+
+
+template <int dim>
+class InitialValuesLS : public Function<dim>
+{
+public:
+  InitialValuesLS()
+    : Function<dim>(1, 0)
+  {}
+
+  double
+  value(const Point<dim> &p, const unsigned int) const
+  {
+    // set radius of bubble to 0.5, slightly shifted away from the center
+    Point<dim> center;
+    for (unsigned int d = 0; d < dim; ++d)
+      center[d] = 0.02 + 0.01 * d;
+    return p.distance(center) - 0.5;
+  }
+};
+
+
+
 template <int dim>
 class MicroFluidicProblem
 {
@@ -110,7 +133,7 @@ MicroFluidicProblem<dim>::run()
     solver =
       std::make_unique<FrontTrackingSolver<dim>>(navier_stokes_solver, surface_mesh);
   else if (parameters.solver_method == "mixed level set")
-    solver = std::make_unique<MixedLevelSetSolver<dim>>();
+    solver = std::make_unique<MixedLevelSetSolver<dim>>(InitialValuesLS<dim>());
   else
     AssertThrow(false, ExcNotImplemented());
 

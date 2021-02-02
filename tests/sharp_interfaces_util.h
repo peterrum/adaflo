@@ -810,6 +810,11 @@ namespace dealii
   class MixedLevelSetSolver : public SharpInterfaceSolver
   {
   public:
+    MixedLevelSetSolver(const Function<dim> &initial_values_ls)
+    {
+      (void)initial_values_ls;
+    }
+
     void
     advance_time_step() override
     {
