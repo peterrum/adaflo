@@ -22,6 +22,7 @@
 #include <boost/geometry/geometries/point_xy.hpp>
 #include <boost/geometry/geometries/polygon.hpp>
 
+#include <adaflo/level_set_okz_advance_concentration.h>
 #include <adaflo/level_set_okz_compute_curvature.h>
 #include <adaflo/level_set_okz_compute_normal.h>
 #include <adaflo/level_set_okz_preconditioner.h>
@@ -1033,8 +1034,10 @@ namespace dealii
     static const unsigned int dof_index_curvature = 2;
     static const unsigned int quad_index          = 0;
 
-    LevelSetSolver()
+    LevelSetSolver(const FlowParameters &parameters, const TimeStepping &time_stepping)
       : pcout(std::cout, Utilities::MPI::this_mpi_process(MPI_COMM_WORLD) == 0)
+      , parameters(parameters)
+      , time_stepping(time_stepping)
       , normal_vector_field(dim)
       , normal_vector_rhs(dim)
     {
@@ -1157,26 +1160,26 @@ namespace dealii
     void
     solve()
     {
-      // TODO
-      const double       dt         = 0.01;
-      const unsigned int stab_steps = 20;
+      this->advance_concentration();
+      this->reinitialize();
+    }
 
-      // perform reinitialization
-      constraints.set_zero(ls_solution);
-      reinit->reinitialize(dt, stab_steps, 0, [this](const bool fast) {
+    void
+    advance_concentration()
+    {
+      advection_operator->advance_concentration(this->time_stepping.step_size());
+    }
+
+    void
+    reinitialize()
+    {
+      const double       dt         = this->time_stepping.step_size();
+      const unsigned int stab_steps = this->parameters.n_reinit_steps;
+      const unsigned int diff_steps = 0;
+
+      reinit->reinitialize(dt, stab_steps, diff_steps, [this](const bool fast) {
         normal_operator->compute_normal(fast);
       });
-
-      // compute normal vectors
-      normal_operator->compute_normal(false);
-
-      // compute curvature
-      curvature_operator->compute_curvature();
-
-      constraints.distribute(ls_solution);
-      for (unsigned int i = 0; i < dim; ++i)
-        constraints_normals.distribute(normal_vector_field.block(i));
-      constraints_curvature.distribute(curvature_solution);
     }
 
     const VectorType &
@@ -1204,7 +1207,9 @@ namespace dealii
     }
 
   private:
-    ConditionalOStream pcout;
+    ConditionalOStream    pcout;
+    const FlowParameters &parameters;
+    const TimeStepping &  time_stepping;
 
     DoFHandler<dim> dof_handler;
 
@@ -1228,9 +1233,10 @@ namespace dealii
     std::shared_ptr<BlockMatrixExtension> projection_matrix;
     std::shared_ptr<BlockILUExtension>    ilu_projection_matrix;
 
-    std::unique_ptr<LevelSetOKZSolverComputeNormal<dim>>    normal_operator;
-    std::unique_ptr<LevelSetOKZSolverReinitialization<dim>> reinit;
-    std::unique_ptr<LevelSetOKZSolverComputeCurvature<dim>> curvature_operator;
+    std::unique_ptr<LevelSetOKZSolverComputeNormal<dim>>        normal_operator;
+    std::unique_ptr<LevelSetOKZSolverReinitialization<dim>>     reinit;
+    std::unique_ptr<LevelSetOKZSolverComputeCurvature<dim>>     curvature_operator;
+    std::unique_ptr<LevelSetOKZSolverAdvanceConcentration<dim>> advection_operator;
   };
 
 
@@ -1245,6 +1251,8 @@ namespace dealii
                         Triangulation<dim - 1, dim> &surface_mesh,
                         const Function<dim> &        initial_values_ls)
       : navier_stokes_solver(navier_stokes_solver)
+      , level_set_solver(navier_stokes_solver.get_parameters(),
+                         navier_stokes_solver.time_stepping)
       , euler_dofhandler(surface_mesh)
       , surface_dofhandler(surface_mesh)
     {
