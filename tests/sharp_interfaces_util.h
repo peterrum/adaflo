@@ -1038,43 +1038,11 @@ namespace dealii
       : pcout(std::cout, Utilities::MPI::this_mpi_process(MPI_COMM_WORLD) == 0)
       , parameters(parameters)
       , time_stepping(time_stepping)
+      , last_concentration_range(-1, +1)
+      , first_reinit_step(true)
       , normal_vector_field(dim)
       , normal_vector_rhs(dim)
     {
-      matrix_free.initialize_dof_vector(ls_solution_update, dof_index_ls);
-      matrix_free.initialize_dof_vector(ls_system_rhs, dof_index_ls);
-      matrix_free.initialize_dof_vector(curvature_rhs, dof_index_curvature);
-
-      for (unsigned int i = 0; i < dim; ++i)
-        matrix_free.initialize_dof_vector(normal_vector_rhs.block(i), dof_index_normal);
-
-      // TODO
-      std::pair<double, double> last_concentration_range   = {-1, +1};
-      bool                      first_reinit_step          = true;
-      double                    epsilon                    = 1.5;
-      const unsigned int        concentration_subdivisions = 1;
-
-      AlignedVector<VectorizedArray<double>> cell_diameters;
-      double                                 minimal_edge_length;
-      double                                 epsilon_used;
-      compute_cell_diameters(
-        matrix_free, dof_index_ls, cell_diameters, minimal_edge_length, epsilon_used);
-
-      epsilon_used = epsilon / concentration_subdivisions * epsilon_used;
-
-      initialize_mass_matrix_diagonal(
-        matrix_free, hanging_node_constraints, dof_index_ls, quad_index, preconditioner);
-
-      initialize_projection_matrix(matrix_free,
-                                   constraints_normals,
-                                   dof_index_ls,
-                                   quad_index,
-                                   epsilon_used,
-                                   epsilon,
-                                   cell_diameters,
-                                   *projection_matrix,
-                                   *ilu_projection_matrix);
-
       {
         LevelSetOKZSolverComputeNormalParameter params;
         params.dof_index_ls            = dof_index_ls;
@@ -1202,6 +1170,37 @@ namespace dealii
             params,
             this->preconditioner);
       }
+
+      {
+        matrix_free.initialize_dof_vector(ls_solution_update, dof_index_ls);
+        matrix_free.initialize_dof_vector(ls_system_rhs, dof_index_ls);
+        matrix_free.initialize_dof_vector(curvature_rhs, dof_index_curvature);
+
+        for (unsigned int i = 0; i < dim; ++i)
+          matrix_free.initialize_dof_vector(normal_vector_rhs.block(i), dof_index_normal);
+
+        compute_cell_diameters(
+          matrix_free, dof_index_ls, cell_diameters, minimal_edge_length, epsilon_used);
+
+        epsilon_used =
+          parameters.epsilon / parameters.concentration_subdivisions * epsilon_used;
+
+        initialize_mass_matrix_diagonal(matrix_free,
+                                        hanging_node_constraints,
+                                        dof_index_ls,
+                                        quad_index,
+                                        preconditioner);
+
+        initialize_projection_matrix(matrix_free,
+                                     constraints_normals,
+                                     dof_index_ls,
+                                     quad_index,
+                                     epsilon_used,
+                                     this->parameters.epsilon,
+                                     cell_diameters,
+                                     *projection_matrix,
+                                     *ilu_projection_matrix);
+      }
     }
 
     void
@@ -1209,24 +1208,6 @@ namespace dealii
     {
       this->advance_concentration();
       this->reinitialize();
-    }
-
-    void
-    advance_concentration()
-    {
-      advection_operator->advance_concentration(this->time_stepping.step_size());
-    }
-
-    void
-    reinitialize()
-    {
-      const double       dt         = this->time_stepping.step_size();
-      const unsigned int stab_steps = this->parameters.n_reinit_steps;
-      const unsigned int diff_steps = 0;
-
-      reinit->reinitialize(dt, stab_steps, diff_steps, [this](const bool fast) {
-        normal_operator->compute_normal(fast);
-      });
     }
 
     const VectorType &
@@ -1254,9 +1235,34 @@ namespace dealii
     }
 
   private:
+    void
+    advance_concentration()
+    {
+      advection_operator->advance_concentration(this->time_stepping.step_size());
+    }
+
+    void
+    reinitialize()
+    {
+      const double       dt         = this->time_stepping.step_size();
+      const unsigned int stab_steps = this->parameters.n_reinit_steps;
+      const unsigned int diff_steps = 0;
+
+      reinit->reinitialize(dt, stab_steps, diff_steps, [this](const bool fast) {
+        normal_operator->compute_normal(fast);
+      });
+    }
+
     ConditionalOStream    pcout;
     const FlowParameters &parameters;
     const TimeStepping &  time_stepping;
+
+
+    std::pair<double, double>              last_concentration_range = {-1, +1};
+    bool                                   first_reinit_step        = true;
+    AlignedVector<VectorizedArray<double>> cell_diameters;
+    double                                 minimal_edge_length;
+    double                                 epsilon_used;
 
     DoFHandler<dim> dof_handler;
 
