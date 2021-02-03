@@ -678,7 +678,8 @@ namespace dealii
     FEPointEvaluation<1, dim> phi_curvature(mapping, dof_handler.get_fe());
 
     FESystem<dim>               fe_dim(dof_handler.get_fe(), dim);
-    FEPointEvaluation<dim, dim> phi_normal_force(mapping, fe_dim);
+    FEPointEvaluation<dim, dim> phi_normal(mapping, fe_dim);
+    FEPointEvaluation<dim, dim> phi_force(mapping, dof_handler_dim.get_fe());
 
     std::vector<double>                  buffer;
     std::vector<double>                  buffer_dim;
@@ -698,11 +699,9 @@ namespace dealii
           cells[i].second,
           &dof_handler_dim};
 
-        const unsigned int n_dofs_per_component = cell->get_fe().n_dofs_per_cell();
-
-        local_dof_indices.resize(n_dofs_per_component);
-        buffer.resize(n_dofs_per_component);
-        buffer_dim.resize(n_dofs_per_component * dim);
+        local_dof_indices.resize(cell->get_fe().n_dofs_per_cell());
+        buffer.resize(cell->get_fe().n_dofs_per_cell());
+        buffer_dim.resize(cell->get_fe().n_dofs_per_cell() * dim);
 
         cell->get_dof_indices(local_dof_indices);
 
@@ -730,29 +729,26 @@ namespace dealii
                                        local_dof_indices.begin(),
                                        buffer.begin(),
                                        buffer.end());
-            for (unsigned int c = 0; c < n_dofs_per_component; ++c)
+            for (unsigned int c = 0; c < cell->get_fe().n_dofs_per_cell(); ++c)
               buffer_dim[c * dim + i] = buffer[c];
           }
 
         // evaluate normal
-        phi_normal_force.evaluate(cell, unit_points, buffer_dim, EvaluationFlags::values);
+        phi_normal.evaluate(cell, unit_points, buffer_dim, EvaluationFlags::values);
 
         // quadrature loop
         for (unsigned int q = 0; q < n_points; ++q)
           {
-            const auto normal =
-              phi_normal_force.get_value(q) / phi_normal_force.get_value(q).norm();
-            phi_normal_force.submit_value(normal * phi_curvature.get_value(q) * JxW[q],
-                                          q);
+            const auto normal = phi_normal.get_value(q) / phi_normal.get_value(q).norm();
+            phi_force.submit_value(normal * phi_curvature.get_value(q) * JxW[q], q);
           }
 
-        // integrate force
-        phi_normal_force.integrate(cell,
-                                   unit_points,
-                                   buffer_dim,
-                                   EvaluationFlags::values);
+        buffer_dim.resize(dof_handler_dim.get_fe().n_dofs_per_cell());
+        local_dof_indices.resize(dof_handler_dim.get_fe().n_dofs_per_cell());
 
-        local_dof_indices.resize(n_dofs_per_component * dim);
+        // integrate force
+        phi_force.integrate(cell, unit_points, buffer_dim, EvaluationFlags::values);
+
         cell_dim->get_dof_indices(local_dof_indices);
 
         constraints.distribute_local_to_global(buffer_dim,
@@ -1193,7 +1189,8 @@ namespace dealii
         const FE_Q<dim> fe(parameters.concentration_subdivisions);
         dof_handler.distribute_dofs(fe);
 
-        const FE_Q<dim> fe_dim(QGaussLobatto<1>(parameters.velocity_degree));
+        const FESystem<dim> fe_dim(
+          FE_Q<dim>(QGaussLobatto<1>(parameters.velocity_degree)), dim);
         dof_handler_dim.distribute_dofs(fe_dim);
 
         // @todo: or use QIterated?
@@ -1307,6 +1304,12 @@ namespace dealii
     get_dof_handler() const
     {
       return dof_handler;
+    }
+
+    const DoFHandler<dim> &
+    get_dof_handler_dim() const
+    {
+      return dof_handler_dim;
     }
 
   private:

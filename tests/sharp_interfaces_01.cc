@@ -475,6 +475,12 @@ test(const std::string &parameter_filename)
     velocity_solution_old_old.reinit(velocity_solution);
 
     const auto post_process = [&](const unsigned int) {
+      std::cout << "A" << std::endl;
+      std::cout << level_set_solver.get_normal_vector().l2_norm() << std::endl;
+
+      std::cout << "B" << std::endl;
+      std::cout << level_set_solver.get_curvature_vector().l2_norm() << std::endl;
+
       VectorType force_vector_sharp_interface;
       level_set_solver.initialize_dof_vector(force_vector_sharp_interface,
                                              LevelSetSolver<dim>::dof_index_velocity);
@@ -484,12 +490,13 @@ test(const std::string &parameter_filename)
                                                 surface_fe,
                                                 surface_quad,
                                                 mapping,
-                                                dof_handler,
-                                                dof_handler_dim,
+                                                level_set_solver.get_dof_handler(),
+                                                level_set_solver.get_dof_handler_dim(),
                                                 level_set_solver.get_normal_vector(),
                                                 level_set_solver.get_curvature_vector(),
                                                 force_vector_sharp_interface);
 
+      std::cout << "C" << std::endl;
       std::cout << force_vector_sharp_interface.l2_norm() << std::endl;
     };
 
