@@ -1206,8 +1206,6 @@ namespace dealii
         constraints_force.close();
         hanging_node_constraints.close();
 
-        MatrixFree<dim, double> matrix_free;
-
         const std::vector<const DoFHandler<dim> *> dof_handlers{&dof_handler,
                                                                 &dof_handler,
                                                                 &dof_handler,
