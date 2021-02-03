@@ -301,7 +301,7 @@ compute_force_vector_regularized(const MatrixFree<dim, double> &matrix_free,
 
 template <int dim>
 void
-test()
+test(const std::string &parameter_filename)
 {
   const unsigned int n_global_refinements = 6;
   const unsigned int fe_degree            = 1;
@@ -444,8 +444,14 @@ test()
   }
 
   {
-    const FlowParameters parameters;
-    TimeStepping         time_stepping(parameters);
+    FlowParameters parameters;
+
+    ParameterHandler prm;
+    parameters.declare_parameters(prm);
+    parameters.check_for_file(parameter_filename, prm);
+    parameters.parse_parameters(parameter_filename, prm);
+
+    TimeStepping time_stepping(parameters);
 
     std::map<types::boundary_id, std::shared_ptr<Function<dim>>> fluid_type;
     std::set<types::boundary_id>                                 symmetry;
@@ -478,5 +484,7 @@ main(int argc, char **argv)
 {
   Utilities::MPI::MPI_InitFinalize mpi(argc, argv, 1);
 
-  test<2>();
+  AssertDimension(argc, 2)
+
+    test<2>(argv[1]);
 }
