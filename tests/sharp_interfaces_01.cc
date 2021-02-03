@@ -438,9 +438,20 @@ test(const std::string &parameter_filename)
   //  compute force vector with a share-interface approach
   Triangulation<dim - 1, dim> surface_mesh;
   create_surface_mesh(surface_mesh);
-  MappingQ1<dim - 1, dim> surface_mapping;
-  FE_Q<dim - 1, dim>      surface_fe(fe_degree);
-  QGauss<dim - 1>         surface_quad(fe_degree + 1);
+
+  FESystem<dim - 1, dim>   surface_fe_dim(FE_Q<dim - 1, dim>(fe_degree), dim);
+  DoFHandler<dim - 1, dim> surface_dof_handler_dim(surface_mesh);
+  surface_dof_handler_dim.distribute_dofs(surface_fe_dim);
+
+  VectorType euler_vector(surface_dof_handler_dim.n_dofs());
+  VectorTools::get_position_vector(surface_dof_handler_dim,
+                                   euler_vector,
+                                   MappingQGeneric<dim - 1, dim>(4));
+  MappingFEField<dim - 1, dim, VectorType> surface_mapping(surface_dof_handler_dim,
+                                                           euler_vector);
+
+  FE_Q<dim - 1, dim> surface_fe(fe_degree);
+  QGauss<dim - 1>    surface_quad(fe_degree + 1);
   compute_force_vector_sharp_interface<dim>(surface_mesh,
                                             surface_mapping,
                                             surface_fe,
@@ -552,40 +563,60 @@ test(const std::string &parameter_filename)
                                                 level_set_solver.get_curvature_vector(),
                                                 force_vector_sharp_interface);
 
-      DataOutBase::VtkFlags flags;
-      flags.write_higher_order_cells = true;
+      {
+        DataOutBase::VtkFlags flags;
+        flags.write_higher_order_cells = true;
 
-      DataOut<dim> data_out;
-      data_out.set_flags(flags);
-      data_out.add_data_vector(level_set_solver.get_dof_handler(),
-                               level_set_solver.get_level_set_vector(),
-                               "ls");
-      data_out.add_data_vector(level_set_solver.get_dof_handler(),
-                               level_set_solver.get_curvature_vector(),
-                               "curvature");
-
-      for (unsigned int i = 0; i < dim; ++i)
+        DataOut<dim> data_out;
+        data_out.set_flags(flags);
         data_out.add_data_vector(level_set_solver.get_dof_handler(),
-                                 level_set_solver.get_normal_vector().block(i),
-                                 "normal_" + std::to_string(i));
+                                 level_set_solver.get_level_set_vector(),
+                                 "ls");
+        data_out.add_data_vector(level_set_solver.get_dof_handler(),
+                                 level_set_solver.get_curvature_vector(),
+                                 "curvature");
 
-      data_out.add_data_vector(level_set_solver.get_dof_handler_dim(),
-                               force_vector_regularized,
-                               "force_re_");
+        for (unsigned int i = 0; i < dim; ++i)
+          data_out.add_data_vector(level_set_solver.get_dof_handler(),
+                                   level_set_solver.get_normal_vector().block(i),
+                                   "normal_" + std::to_string(i));
 
-      data_out.add_data_vector(level_set_solver.get_dof_handler_dim(),
-                               force_vector_sharp_interface,
-                               "force_si_");
+        data_out.add_data_vector(level_set_solver.get_dof_handler_dim(),
+                                 force_vector_regularized,
+                                 "force_re_");
 
-      data_out.add_data_vector(level_set_solver.get_dof_handler_dim(),
-                               velocity_solution,
-                               "velocity");
+        data_out.add_data_vector(level_set_solver.get_dof_handler_dim(),
+                                 force_vector_sharp_interface,
+                                 "force_si_");
 
-      data_out.build_patches(mapping, fe_degree + 1);
-      data_out.write_vtu_with_pvtu_record("./",
-                                          "sharp_interface_01_temp",
-                                          i,
-                                          MPI_COMM_WORLD);
+        data_out.add_data_vector(level_set_solver.get_dof_handler_dim(),
+                                 velocity_solution,
+                                 "velocity");
+
+        data_out.build_patches(mapping, fe_degree + 1);
+        data_out.write_vtu_with_pvtu_record("./",
+                                            "sharp_interface_01_temp",
+                                            i,
+                                            MPI_COMM_WORLD);
+      }
+
+      {
+        DataOutBase::VtkFlags flags;
+
+        DataOut<dim - 1, DoFHandler<dim - 1, dim>> data_out;
+        data_out.set_flags(flags);
+        data_out.attach_dof_handler(surface_dof_handler_dim);
+
+        data_out.build_patches(
+          surface_mapping,
+          3,
+          DataOut<dim - 1,
+                  DoFHandler<dim - 1, dim>>::CurvedCellRegion::curved_inner_cells);
+        data_out.write_vtu_with_pvtu_record("./",
+                                            "sharp_interface_01_surf",
+                                            i,
+                                            MPI_COMM_WORLD);
+      }
     };
 
     post_process(0);
@@ -594,6 +625,14 @@ test(const std::string &parameter_filename)
       {
         level_set_solver.solve();
         post_process(i);
+
+        VectorTools::update_position_vector(time_stepping.step_size(),
+                                            level_set_solver.get_dof_handler_dim(),
+                                            mapping,
+                                            velocity_solution,
+                                            surface_dof_handler_dim,
+                                            surface_mapping,
+                                            euler_vector);
 
         time_stepping.next();
       }
