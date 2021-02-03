@@ -492,8 +492,10 @@ test(const std::string &parameter_filename)
 
     TimeStepping time_stepping(parameters);
 
-    std::map<types::boundary_id, std::shared_ptr<Function<dim>>> fluid_type;
     std::set<types::boundary_id>                                 symmetry;
+    std::map<types::boundary_id, std::shared_ptr<Function<dim>>> fluid_type;
+    fluid_type[0] = std::make_shared<Functions::ConstantFunction<dim>>(-1.0);
+
 
     VectorType velocity_solution, velocity_solution_old, velocity_solution_old_old;
 

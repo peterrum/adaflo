@@ -1197,8 +1197,12 @@ namespace dealii
         const QIterated<dim> quad(QGauss<1>(2), fe.degree);
 
         // @todo: fill constraints
-        VectorTools::interpolate_boundary_values(
-          mapping, dof_handler, 0, Functions::ConstantFunction<dim>(-1.0), constraints);
+        for (const auto &i : fluid_type)
+          VectorTools::interpolate_boundary_values(mapping,
+                                                   dof_handler,
+                                                   i.first,
+                                                   Functions::ConstantFunction<dim>(0.0),
+                                                   constraints);
 
         constraints.close();
         constraints_curvature.close();
@@ -1286,8 +1290,6 @@ namespace dealii
     {
       this->advance_concentration();
       this->reinitialize();
-
-      constraints.distribute(ls_solution);
     }
 
     const VectorType &
