@@ -1182,7 +1182,51 @@ namespace dealii
 
       // MatrixFree
       {
+        const unsigned int fe_degree = 1; // TODO
 
+        DoFHandler<dim> dof_handler_dim; // TODO
+
+        MappingQ1<dim> mapping;
+
+        AffineConstraints<double> constraints, constraints_normals,
+          hanging_node_constraints, constraints_curvature, constraints_force;
+
+        /** not needed: why?
+        VectorTools::interpolate_boundary_values(
+          mapping, dof_handler, 0, Functions::ConstantFunction<dim>(-1.0), constraints);
+
+        VectorTools::interpolate_boundary_values(
+          mapping, dof_handler, 0, Functions::ConstantFunction<dim>(0.0),
+        constraints_normals);
+
+        VectorTools::interpolate_boundary_values(mapping,
+                                                 dof_handler,
+                                                 0,
+                                                 Functions::ConstantFunction<dim>(0.0),
+                                                 constraints_curvature);
+         */
+
+        constraints.close();
+        constraints_curvature.close();
+        constraints_normals.close();
+        constraints_force.close();
+        hanging_node_constraints.close();
+
+        QGauss<1> quad(fe_degree + 1);
+
+        MatrixFree<dim, double> matrix_free;
+
+        const std::vector<const DoFHandler<dim> *> dof_handlers{&dof_handler,
+                                                                &dof_handler,
+                                                                &dof_handler,
+                                                                &dof_handler_dim};
+
+        const std::vector<const AffineConstraints<double> *> all_constraints{
+          &constraints, &constraints_normals, &constraints_curvature, &constraints_force};
+
+        const std::vector<Quadrature<1>> quadratures{quad};
+
+        matrix_free.reinit(mapping, dof_handlers, all_constraints, quadratures);
       }
 
       // Vectors
