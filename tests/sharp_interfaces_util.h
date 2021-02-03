@@ -1312,6 +1312,12 @@ namespace dealii
       return dof_handler_dim;
     }
 
+    MatrixFree<dim, double> &
+    get_matrix_free()
+    {
+      return matrix_free;
+    }
+
   private:
     void
     advance_concentration()
