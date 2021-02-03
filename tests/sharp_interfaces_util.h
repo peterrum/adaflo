@@ -1262,6 +1262,14 @@ namespace dealii
       }
 
       VectorTools::interpolate(mapping, dof_handler, initial_values_ls, ls_solution);
+
+      reinitialize(true);
+    }
+
+    void
+    initialize_dof_vector(VectorType &vec, const unsigned int dof_index)
+    {
+      matrix_free.initialize_dof_vector(vec, dof_index);
     }
 
     void
@@ -1303,10 +1311,12 @@ namespace dealii
     }
 
     void
-    reinitialize()
+    reinitialize(const bool initialization = false)
     {
       const double       dt         = this->time_stepping.step_size();
-      const unsigned int stab_steps = this->parameters.n_reinit_steps;
+      const unsigned int stab_steps = initialization ?
+                                        this->parameters.n_initial_reinit_steps :
+                                        this->parameters.n_reinit_steps;
       const unsigned int diff_steps = 0;
 
       reinit->reinitialize(dt, stab_steps, diff_steps, [this](const bool fast) {

@@ -461,6 +461,11 @@ test()
                                          fluid_type,
                                          symmetry);
 
+    level_set_solver.initialize_dof_vector(velocity_solution,
+                                           LevelSetSolver<dim>::dof_index_velocity);
+    velocity_solution_old.reinit(velocity_solution);
+    velocity_solution_old_old.reinit(velocity_solution);
+
     level_set_solver.solve();
   }
 }
