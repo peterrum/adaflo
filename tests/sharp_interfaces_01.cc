@@ -325,8 +325,25 @@ test(const std::string &parameter_filename)
   const unsigned int fe_degree            = 1;
 
   Triangulation<dim> tria;
-  GridGenerator::hyper_cube(tria, -1.0, +1.0);
-  tria.refine_global(n_global_refinements);
+  GridGenerator::subdivided_hyper_cube(tria, 2, -1.0, +1.0);
+
+  for (const auto &cell : tria.cell_iterators())
+    for (const auto &face : cell->face_iterators())
+      if ((face->at_boundary()))
+        {
+          if (face->center()[0] == -1.0 && face->center()[1] > 0.0)
+            face->set_boundary_id(0);
+          else if (face->center()[0] == +1.0 && face->center()[1] < 0.0)
+            face->set_boundary_id(0);
+          else if (face->center()[1] == -1.0 && face->center()[0] > 0.0)
+            face->set_boundary_id(0);
+          else if (face->center()[1] == +1.0 && face->center()[0] < 0.0)
+            face->set_boundary_id(0);
+          else
+            face->set_boundary_id(1);
+        }
+
+  tria.refine_global(n_global_refinements - 1);
 
   DoFHandler<dim> dof_handler(tria);
   dof_handler.distribute_dofs(FE_Q<dim>(fe_degree));

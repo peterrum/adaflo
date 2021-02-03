@@ -1270,6 +1270,9 @@ namespace dealii
       VectorTools::interpolate(mapping, dof_handler, initial_values_ls, ls_solution);
 
       reinitialize(true);
+
+      velocity_solution_old     = velocity_solution;
+      velocity_solution_old_old = velocity_solution;
     }
 
     void
