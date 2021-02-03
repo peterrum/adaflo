@@ -44,6 +44,22 @@ static const unsigned int dof_index_curvature = 2;
 static const unsigned int dof_index_force     = 3;
 static const unsigned int quad_index          = 0;
 
+
+template <int dim>
+class VelocityFunction : public Function<dim>
+{
+public:
+  VelocityFunction()
+    : Function<dim>(dim)
+  {}
+
+  double
+  value(const Point<dim> &p, const unsigned int component) const
+  {
+    return component == 0 ? p[1] : -p[0];
+  }
+};
+
 template <int dim>
 class InitialValuesLS : public Function<dim>
 {
@@ -58,8 +74,8 @@ public:
     (void)component;
     AssertDimension(component, 0);
 
-    const double radius = 0.5;
-    Point<dim>   origin;
+    const double radius = 0.25;
+    Point<dim>   origin(0.0, 0.5);
     return (radius - p.distance(origin) > 0.0) ? +1.0 : -1.0;
   }
 };
@@ -68,7 +84,7 @@ template <int dim, int spacedim>
 void
 create_surface_mesh(Triangulation<dim, spacedim> &tria)
 {
-  GridGenerator::hyper_sphere(tria, Point<spacedim>(), 0.5);
+  GridGenerator::hyper_sphere(tria, Point<spacedim>(0, 0.5), 0.25);
   tria.refine_global(5);
 }
 
@@ -476,8 +492,14 @@ test(const std::string &parameter_filename)
 
     level_set_solver.initialize_dof_vector(velocity_solution,
                                            LevelSetSolver<dim>::dof_index_velocity);
-    velocity_solution_old.reinit(velocity_solution);
-    velocity_solution_old_old.reinit(velocity_solution);
+
+    VectorTools::interpolate(mapping,
+                             level_set_solver.get_dof_handler_dim(),
+                             VelocityFunction<dim>(),
+                             velocity_solution);
+
+    velocity_solution_old     = velocity_solution;
+    velocity_solution_old_old = velocity_solution;
 
     const auto post_process = [&](const unsigned int i) {
       // regularized

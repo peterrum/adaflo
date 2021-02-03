@@ -752,7 +752,7 @@ namespace dealii
         cell_dim->get_dof_indices(local_dof_indices);
 
         constraints.distribute_local_to_global(buffer_dim,
-                                               local_dof_indices /*TODO*/,
+                                               local_dof_indices,
                                                force_vector);
       }
   }
