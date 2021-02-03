@@ -1276,8 +1276,8 @@ namespace dealii
     const TimeStepping &  time_stepping;
 
 
-    std::pair<double, double>              last_concentration_range = {-1, +1};
-    bool                                   first_reinit_step        = true;
+    std::pair<double, double>              last_concentration_range;
+    bool                                   first_reinit_step;
     AlignedVector<VectorizedArray<double>> cell_diameters;
     double                                 minimal_edge_length;
     double                                 epsilon_used;
