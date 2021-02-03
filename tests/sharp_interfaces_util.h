@@ -1032,6 +1032,7 @@ namespace dealii
     static const unsigned int dof_index_ls        = 0;
     static const unsigned int dof_index_normal    = 1;
     static const unsigned int dof_index_curvature = 2;
+    static const unsigned int dof_index_velocity  = 3;
     static const unsigned int quad_index          = 0;
 
     LevelSetSolver(
@@ -1139,9 +1140,9 @@ namespace dealii
       {
         LevelSetOKZSolverAdvanceConcentrationParameter params;
 
-        params.dof_index_ls             = 2;
-        params.dof_index_vel            = 0;
-        params.quad_index               = 2;
+        params.dof_index_ls             = dof_index_ls;
+        params.dof_index_vel            = dof_index_velocity;
+        params.quad_index               = quad_index;
         params.convection_stabilization = this->parameters.convection_stabilization;
         params.do_iteration             = this->parameters.do_iteration;
         params.tol_nl_iteration         = this->parameters.tol_nl_iteration;
