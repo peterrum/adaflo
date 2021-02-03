@@ -1185,13 +1185,6 @@ namespace dealii
       {
         const unsigned int fe_degree = 1; // TODO
 
-        DoFHandler<dim> dof_handler_dim; // TODO
-
-        MappingQ1<dim> mapping;
-
-        AffineConstraints<double> constraints, constraints_normals,
-          hanging_node_constraints, constraints_curvature, constraints_force;
-
         /** not needed: why?
         VectorTools::interpolate_boundary_values(
           mapping, dof_handler, 0, Functions::ConstantFunction<dim>(-1.0), constraints);
@@ -1327,13 +1320,17 @@ namespace dealii
     double                                 minimal_edge_length;
     double                                 epsilon_used;
 
+    MappingQ1<dim> mapping;
+
     DoFHandler<dim> dof_handler;
+    DoFHandler<dim> dof_handler_dim;
 
     MatrixFree<dim, double>   matrix_free;
     AffineConstraints<double> constraints;
     AffineConstraints<double> constraints_normals;
     AffineConstraints<double> hanging_node_constraints;
     AffineConstraints<double> constraints_curvature;
+    AffineConstraints<double> constraints_force;
 
     VectorType &velocity_solution;
     VectorType &velocity_solution_old;
