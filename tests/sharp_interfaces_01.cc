@@ -594,6 +594,8 @@ test(const std::string &parameter_filename)
       {
         level_set_solver.solve();
         post_process(i);
+
+        time_stepping.next();
       }
   }
 }

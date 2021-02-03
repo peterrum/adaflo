@@ -1288,6 +1288,23 @@ namespace dealii
     void
     solve()
     {
+      const double step_size     = time_stepping.step_size();
+      const double step_size_old = time_stepping.old_step_size();
+      ls_update                  = ls_solution;
+
+      if (step_size_old > 0)
+        ls_update.sadd((step_size + step_size_old) / step_size_old,
+                       -step_size / step_size_old,
+                       ls_solution_old);
+
+      ls_solution_old_old = ls_solution_old;
+      ls_solution_old     = ls_solution;
+      ls_solution         = ls_update;
+
+      ls_solution.update_ghost_values();
+      ls_solution_old.update_ghost_values();
+      ls_solution_old_old.update_ghost_values();
+
       this->advance_concentration();
       this->reinitialize();
     }
