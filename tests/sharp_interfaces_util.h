@@ -1052,6 +1052,8 @@ namespace dealii
       , time_stepping(time_stepping)
       , last_concentration_range(-1, +1)
       , first_reinit_step(true)
+      , dof_handler(tria)
+      , dof_handler_dim(tria)
       , velocity_solution(velocity_solution)
       , velocity_solution_old(velocity_solution_old)
       , velocity_solution_old_old(velocity_solution_old_old)
@@ -1104,9 +1106,9 @@ namespace dealii
           epsilon_used,
           minimal_edge_length,
           constraints,
-          ls_solution_update,
+          ls_update,
           ls_solution,
-          ls_system_rhs,
+          ls_rhs,
           pcout,
           preconditioner,
           last_concentration_range,
@@ -1187,32 +1189,22 @@ namespace dealii
 
       // MatrixFree
       {
-        const unsigned int fe_degree = 1; // TODO
+        // @todo: or use FE_Q_iso_Q1?
+        const FE_Q<dim> fe(parameters.concentration_subdivisions);
+        dof_handler.distribute_dofs(fe);
 
-        (void)tria;
+        const FE_Q<dim> fe_dim(QGaussLobatto<1>(parameters.velocity_degree));
+        dof_handler_dim.distribute_dofs(fe_dim);
 
-        /** not needed: why?
-        VectorTools::interpolate_boundary_values(
-          mapping, dof_handler, 0, Functions::ConstantFunction<dim>(-1.0), constraints);
+        // @todo: or use QIterated?
+        const QGauss<1> quad(std::max(fe.degree, fe_dim.degree) + 1);
 
-        VectorTools::interpolate_boundary_values(
-          mapping, dof_handler, 0, Functions::ConstantFunction<dim>(0.0),
-        constraints_normals);
-
-        VectorTools::interpolate_boundary_values(mapping,
-                                                 dof_handler,
-                                                 0,
-                                                 Functions::ConstantFunction<dim>(0.0),
-                                                 constraints_curvature);
-         */
-
+        // @todo: fill constraints
         constraints.close();
         constraints_curvature.close();
         constraints_normals.close();
         constraints_force.close();
         hanging_node_constraints.close();
-
-        QGauss<1> quad(fe_degree + 1);
 
         MatrixFree<dim, double> matrix_free;
 
@@ -1231,12 +1223,22 @@ namespace dealii
 
       // Vectors
       {
-        matrix_free.initialize_dof_vector(ls_solution_update, dof_index_ls);
-        matrix_free.initialize_dof_vector(ls_system_rhs, dof_index_ls);
+        matrix_free.initialize_dof_vector(ls_solution, dof_index_ls);
+        matrix_free.initialize_dof_vector(ls_solution_old, dof_index_ls);
+        matrix_free.initialize_dof_vector(ls_solution_old_old, dof_index_ls);
+        matrix_free.initialize_dof_vector(ls_update, dof_index_ls);
+        matrix_free.initialize_dof_vector(ls_rhs, dof_index_ls);
+
+        matrix_free.initialize_dof_vector(curvature_solution, dof_index_curvature);
         matrix_free.initialize_dof_vector(curvature_rhs, dof_index_curvature);
 
         for (unsigned int i = 0; i < dim; ++i)
-          matrix_free.initialize_dof_vector(normal_vector_rhs.block(i), dof_index_normal);
+          {
+            matrix_free.initialize_dof_vector(normal_vector_field.block(i),
+                                              dof_index_normal);
+            matrix_free.initialize_dof_vector(normal_vector_rhs.block(i),
+                                              dof_index_normal);
+          }
       }
 
       // miscellaneous
@@ -1340,33 +1342,46 @@ namespace dealii
 
     MappingQ1<dim> mapping;
 
-    DoFHandler<dim> dof_handler;
-    DoFHandler<dim> dof_handler_dim;
+    // DoFHandlers
+    DoFHandler<dim> dof_handler;     // for ls, normal, curvature
+    DoFHandler<dim> dof_handler_dim; // for velocity field
 
-    MatrixFree<dim, double>   matrix_free;
+    // Constraints
     AffineConstraints<double> constraints;
     AffineConstraints<double> constraints_normals;
     AffineConstraints<double> hanging_node_constraints;
     AffineConstraints<double> constraints_curvature;
     AffineConstraints<double> constraints_force;
 
+    // MatrixFree
+    MatrixFree<dim, double> matrix_free;
+
+    // vectors: velocity (external)
     VectorType &velocity_solution;
     VectorType &velocity_solution_old;
     VectorType &velocity_solution_old_old;
 
-    VectorType      ls_solution, ls_solution_old, ls_solution_old_old, ls_update, ls_rhs;
+    // ... level set
+    VectorType ls_solution;
+    VectorType ls_solution_old;
+    VectorType ls_solution_old_old;
+    VectorType ls_update;
+    VectorType ls_rhs;
+
+    // ... normal
     BlockVectorType normal_vector_field;
-    VectorType      curvature_solution;
-
     BlockVectorType normal_vector_rhs;
-    VectorType      ls_solution_update;
-    VectorType      ls_system_rhs;
-    VectorType      curvature_rhs;
 
+    // ... curvature
+    VectorType curvature_solution;
+    VectorType curvature_rhs;
+
+    // Preconditioners
     DiagonalPreconditioner<double>        preconditioner;
     std::shared_ptr<BlockMatrixExtension> projection_matrix;
     std::shared_ptr<BlockILUExtension>    ilu_projection_matrix;
 
+    // Operators
     std::unique_ptr<LevelSetOKZSolverComputeNormal<dim>>        normal_operator;
     std::unique_ptr<LevelSetOKZSolverReinitialization<dim>>     reinit;
     std::unique_ptr<LevelSetOKZSolverComputeCurvature<dim>>     curvature_operator;
