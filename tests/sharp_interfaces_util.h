@@ -1331,6 +1331,10 @@ namespace dealii
       reinit->reinitialize(dt, stab_steps, diff_steps, [this](const bool fast) {
         normal_operator->compute_normal(fast);
       });
+
+      normal_operator->compute_normal(/*fast_computation*/ false);
+
+      curvature_operator->compute_curvature(/*diffuse_large_values*/ false);
     }
 
     ConditionalOStream    pcout;
