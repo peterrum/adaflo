@@ -1038,12 +1038,13 @@ namespace dealii
     static const unsigned int quad_index          = 0;
 
     LevelSetSolver(
-      const Function<dim> & initial_values_ls,
-      const FlowParameters &parameters,
-      const TimeStepping &  time_stepping,
-      VectorType &          velocity_solution,
-      VectorType &          velocity_solution_old,
-      VectorType &          velocity_solution_old_old,
+      const Triangulation<dim> &tria,
+      const Function<dim> &     initial_values_ls,
+      const FlowParameters &    parameters,
+      const TimeStepping &      time_stepping,
+      VectorType &              velocity_solution,
+      VectorType &              velocity_solution_old,
+      VectorType &              velocity_solution_old_old,
       const std::map<types::boundary_id, std::shared_ptr<Function<dim>>> &fluid_type,
       const std::set<types::boundary_id> &                                symmetry)
       : pcout(std::cout, Utilities::MPI::this_mpi_process(MPI_COMM_WORLD) == 0)
@@ -1187,6 +1188,8 @@ namespace dealii
       // MatrixFree
       {
         const unsigned int fe_degree = 1; // TODO
+
+        (void)tria;
 
         /** not needed: why?
         VectorTools::interpolate_boundary_values(
@@ -1382,7 +1385,8 @@ namespace dealii
                         Triangulation<dim - 1, dim> &surface_mesh,
                         const Function<dim> &        initial_values_ls)
       : navier_stokes_solver(navier_stokes_solver)
-      , level_set_solver(initial_values_ls,
+      , level_set_solver(navier_stokes_solver.get_dof_handler_u().get_triangulation(),
+                         initial_values_ls,
                          navier_stokes_solver.get_parameters(),
                          navier_stokes_solver.time_stepping,
                          navier_stokes_solver.solution.block(0),
@@ -1392,9 +1396,7 @@ namespace dealii
                          navier_stokes_solver.boundary->symmetry)
       , euler_dofhandler(surface_mesh)
       , surface_dofhandler(surface_mesh)
-    {
-      (void)initial_values_ls;
-    }
+    {}
 
     void
     advance_time_step() override

@@ -452,7 +452,8 @@ test()
 
     VectorType velocity_solution, velocity_solution_old, velocity_solution_old_old;
 
-    LevelSetSolver<dim> level_set_solver(InitialValuesLS<dim>(),
+    LevelSetSolver<dim> level_set_solver(tria,
+                                         InitialValuesLS<dim>(),
                                          parameters,
                                          time_stepping,
                                          velocity_solution,
