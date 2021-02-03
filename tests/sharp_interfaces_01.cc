@@ -558,6 +558,10 @@ test(const std::string &parameter_filename)
                                force_vector_sharp_interface,
                                "force_si_");
 
+      data_out.add_data_vector(level_set_solver.get_dof_handler_dim(),
+                               velocity_solution,
+                               "velocity");
+
       data_out.build_patches(mapping, fe_degree + 1);
       data_out.write_vtu_with_pvtu_record("./",
                                           "sharp_interface_01_temp",
