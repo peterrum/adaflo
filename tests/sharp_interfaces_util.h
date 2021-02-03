@@ -18,6 +18,8 @@
 
 #include <deal.II/grid/grid_tools_cache.h>
 
+#include <deal.II/numerics/vector_tools.h>
+
 #include <boost/geometry.hpp>
 #include <boost/geometry/geometries/point_xy.hpp>
 #include <boost/geometry/geometries/polygon.hpp>
@@ -1036,6 +1038,7 @@ namespace dealii
     static const unsigned int quad_index          = 0;
 
     LevelSetSolver(
+      const Function<dim> & initial_values_ls,
       const FlowParameters &parameters,
       const TimeStepping &  time_stepping,
       VectorType &          velocity_solution,
@@ -1257,6 +1260,8 @@ namespace dealii
                                      *projection_matrix,
                                      *ilu_projection_matrix);
       }
+
+      VectorTools::interpolate(mapping, dof_handler, initial_values_ls, ls_solution);
     }
 
     void
@@ -1367,7 +1372,8 @@ namespace dealii
                         Triangulation<dim - 1, dim> &surface_mesh,
                         const Function<dim> &        initial_values_ls)
       : navier_stokes_solver(navier_stokes_solver)
-      , level_set_solver(navier_stokes_solver.get_parameters(),
+      , level_set_solver(initial_values_ls,
+                         navier_stokes_solver.get_parameters(),
                          navier_stokes_solver.time_stepping,
                          navier_stokes_solver.solution.block(0),
                          navier_stokes_solver.solution_old.block(0),

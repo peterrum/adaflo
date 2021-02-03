@@ -442,6 +442,27 @@ test()
     data_out.build_patches(mapping, fe_degree + 1);
     data_out.write_vtu_with_pvtu_record("./", "sharp_interface_01", 0, MPI_COMM_WORLD);
   }
+
+  {
+    const FlowParameters parameters;
+    TimeStepping         time_stepping(parameters);
+
+    std::map<types::boundary_id, std::shared_ptr<Function<dim>>> fluid_type;
+    std::set<types::boundary_id>                                 symmetry;
+
+    VectorType velocity_solution, velocity_solution_old, velocity_solution_old_old;
+
+    LevelSetSolver<dim> level_set_solver(InitialValuesLS<dim>(),
+                                         parameters,
+                                         time_stepping,
+                                         velocity_solution,
+                                         velocity_solution_old,
+                                         velocity_solution_old_old,
+                                         fluid_type,
+                                         symmetry);
+
+    level_set_solver.solve();
+  }
 }
 
 
