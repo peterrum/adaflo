@@ -730,7 +730,7 @@ namespace dealii
                                        buffer.begin(),
                                        buffer.end());
             for (unsigned int c = 0; c < cell->get_fe().n_dofs_per_cell(); ++c)
-              buffer_dim[c * dim + i] = buffer[c];
+              buffer_dim[fe_dim.component_to_system_index(i, c)] = buffer[c];
           }
 
         // evaluate normal

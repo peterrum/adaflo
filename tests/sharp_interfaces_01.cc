@@ -234,12 +234,12 @@ compute_ls_normal_curvature(const MatrixFree<dim, double> &  matrix_free,
 }
 
 
-template <int dim>
+template <int dim, typename VectorType1, typename VectorType2>
 void
 compute_force_vector_regularized(const MatrixFree<dim, double> &matrix_free,
-                                 const VectorType &             ls_solution,
-                                 const VectorType &             curvature_solution,
-                                 BlockVectorType &              force_rhs,
+                                 const VectorType1 &            ls_solution,
+                                 const VectorType1 &            curvature_solution,
+                                 VectorType2 &                  force_rhs,
                                  const unsigned int             dof_index_ls,
                                  const unsigned int             dof_index_curvature,
                                  const unsigned int             dof_index_normal,
@@ -255,7 +255,7 @@ compute_force_vector_regularized(const MatrixFree<dim, double> &matrix_free,
 
   const double surface_tension_coefficient = 1.0;
 
-  matrix_free.template cell_loop<BlockVectorType, VectorType>(
+  matrix_free.template cell_loop<VectorType2, VectorType1>(
     [&](const auto &matrix_free,
         auto &      force_rhs,
         const auto &level_set_as_heaviside,
@@ -479,13 +479,12 @@ test(const std::string &parameter_filename)
     velocity_solution_old.reinit(velocity_solution);
     velocity_solution_old_old.reinit(velocity_solution);
 
-    const auto post_process = [&](const unsigned int) {
+    const auto post_process = [&](const unsigned int i) {
       // regularized
-      BlockVectorType force_vector_regularized(dim);
+      VectorType force_vector_regularized;
 
-      for (unsigned int i = 0; i < dim; ++i)
-        level_set_solver.get_matrix_free().initialize_dof_vector(
-          force_vector_regularized.block(i), LevelSetSolver<dim>::dof_index_normal);
+      level_set_solver.get_matrix_free().initialize_dof_vector(
+        force_vector_regularized, LevelSetSolver<dim>::dof_index_velocity);
 
       compute_force_vector_regularized(level_set_solver.get_matrix_free(),
                                        level_set_solver.get_level_set_vector(),
@@ -493,7 +492,7 @@ test(const std::string &parameter_filename)
                                        force_vector_regularized,
                                        LevelSetSolver<dim>::dof_index_ls,
                                        LevelSetSolver<dim>::dof_index_curvature,
-                                       LevelSetSolver<dim>::dof_index_normal,
+                                       LevelSetSolver<dim>::dof_index_velocity,
                                        LevelSetSolver<dim>::quad_index);
 
       // sharp interface
@@ -529,17 +528,19 @@ test(const std::string &parameter_filename)
                                  level_set_solver.get_normal_vector().block(i),
                                  "normal_" + std::to_string(i));
 
-      for (unsigned int i = 0; i < dim; ++i)
-        data_out.add_data_vector(level_set_solver.get_dof_handler(),
-                                 force_vector_regularized.block(i),
-                                 "force_re_" + std::to_string(i));
+      data_out.add_data_vector(level_set_solver.get_dof_handler_dim(),
+                               force_vector_regularized,
+                               "force_re_");
 
       data_out.add_data_vector(level_set_solver.get_dof_handler_dim(),
                                force_vector_sharp_interface,
                                "force_si_");
 
       data_out.build_patches(mapping, fe_degree + 1);
-      data_out.write_vtu_with_pvtu_record("./", "sharp_interface_01", 0, MPI_COMM_WORLD);
+      data_out.write_vtu_with_pvtu_record("./",
+                                          "sharp_interface_01_temp",
+                                          i,
+                                          MPI_COMM_WORLD);
     };
 
     post_process(0);
