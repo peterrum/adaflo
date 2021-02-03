@@ -1197,7 +1197,7 @@ namespace dealii
         dof_handler_dim.distribute_dofs(fe_dim);
 
         // @todo: or use QIterated?
-        const QGauss<1> quad(std::max(fe.degree, fe_dim.degree) + 1);
+        const QIterated<dim> quad(QGauss<1>(2), fe.degree);
 
         // @todo: fill constraints
         constraints.close();
@@ -1214,7 +1214,7 @@ namespace dealii
         const std::vector<const AffineConstraints<double> *> all_constraints{
           &constraints, &constraints_normals, &constraints_curvature, &constraints_force};
 
-        const std::vector<Quadrature<1>> quadratures{quad};
+        const std::vector<Quadrature<dim>> quadratures{quad};
 
         matrix_free.reinit(mapping, dof_handlers, all_constraints, quadratures);
       }
@@ -1252,6 +1252,9 @@ namespace dealii
                                         dof_index_ls,
                                         quad_index,
                                         preconditioner);
+
+        projection_matrix     = std::make_shared<BlockMatrixExtension>();
+        ilu_projection_matrix = std::make_shared<BlockILUExtension>();
 
         initialize_projection_matrix(matrix_free,
                                      constraints_normals,

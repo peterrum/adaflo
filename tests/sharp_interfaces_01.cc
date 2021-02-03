@@ -415,6 +415,7 @@ test(const std::string &parameter_filename)
                                             force_vector_sharp_interface);
 
   std::cout << force_vector_sharp_interface.l2_norm() << std::endl;
+  force_vector_sharp_interface = 0.0;
 
   // TODO: write computed vectors to Paraview
   {
@@ -473,7 +474,32 @@ test(const std::string &parameter_filename)
     velocity_solution_old.reinit(velocity_solution);
     velocity_solution_old_old.reinit(velocity_solution);
 
-    level_set_solver.solve();
+    const auto post_process = [&](const unsigned int) {
+      VectorType force_vector_sharp_interface;
+      level_set_solver.initialize_dof_vector(force_vector_sharp_interface,
+                                             LevelSetSolver<dim>::dof_index_velocity);
+
+      compute_force_vector_sharp_interface<dim>(surface_mesh,
+                                                surface_mapping,
+                                                surface_fe,
+                                                surface_quad,
+                                                mapping,
+                                                dof_handler,
+                                                dof_handler_dim,
+                                                level_set_solver.get_normal_vector(),
+                                                level_set_solver.get_curvature_vector(),
+                                                force_vector_sharp_interface);
+
+      std::cout << force_vector_sharp_interface.l2_norm() << std::endl;
+    };
+
+    post_process(0);
+
+    for (unsigned int i = 1; i <= 10; ++i)
+      {
+        level_set_solver.solve();
+        post_process(i);
+      }
   }
 }
 
