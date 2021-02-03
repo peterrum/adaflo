@@ -1035,8 +1035,11 @@ namespace dealii
     static const unsigned int quad_index          = 0;
 
     LevelSetSolver(
-      const FlowParameters &                                              parameters,
-      const TimeStepping &                                                time_stepping,
+      const FlowParameters &parameters,
+      const TimeStepping &  time_stepping,
+      VectorType &          velocity_solution,
+      VectorType &          velocity_solution_old,
+      VectorType &          velocity_solution_old_old,
       const std::map<types::boundary_id, std::shared_ptr<Function<dim>>> &fluid_type,
       const std::set<types::boundary_id> &                                symmetry)
       : pcout(std::cout, Utilities::MPI::this_mpi_process(MPI_COMM_WORLD) == 0)
@@ -1044,6 +1047,9 @@ namespace dealii
       , time_stepping(time_stepping)
       , last_concentration_range(-1, +1)
       , first_reinit_step(true)
+      , velocity_solution(velocity_solution)
+      , velocity_solution_old(velocity_solution_old)
+      , velocity_solution_old_old(velocity_solution_old_old)
       , normal_vector_field(dim)
       , normal_vector_rhs(dim)
     {
@@ -1174,6 +1180,12 @@ namespace dealii
             this->preconditioner);
       }
 
+      // MatrixFree
+      {
+
+      }
+
+      // Vectors
       {
         matrix_free.initialize_dof_vector(ls_solution_update, dof_index_ls);
         matrix_free.initialize_dof_vector(ls_system_rhs, dof_index_ls);
@@ -1181,7 +1193,10 @@ namespace dealii
 
         for (unsigned int i = 0; i < dim; ++i)
           matrix_free.initialize_dof_vector(normal_vector_rhs.block(i), dof_index_normal);
+      }
 
+      // miscellaneous
+      {
         compute_cell_diameters(
           matrix_free, dof_index_ls, cell_diameters, minimal_edge_length, epsilon_used);
 
@@ -1275,10 +1290,11 @@ namespace dealii
     AffineConstraints<double> hanging_node_constraints;
     AffineConstraints<double> constraints_curvature;
 
+    VectorType &velocity_solution;
+    VectorType &velocity_solution_old;
+    VectorType &velocity_solution_old_old;
 
-    VectorType ls_solution, ls_solution_old, ls_solution_old_old, ls_update, ls_rhs;
-    VectorType velocity_solution, velocity_solution_old,
-      velocity_solution_old_old; // TODO
+    VectorType      ls_solution, ls_solution_old, ls_solution_old_old, ls_update, ls_rhs;
     BlockVectorType normal_vector_field;
     VectorType      curvature_solution;
 
@@ -1311,6 +1327,9 @@ namespace dealii
       : navier_stokes_solver(navier_stokes_solver)
       , level_set_solver(navier_stokes_solver.get_parameters(),
                          navier_stokes_solver.time_stepping,
+                         navier_stokes_solver.solution.block(0),
+                         navier_stokes_solver.solution_old.block(0),
+                         navier_stokes_solver.solution_old_old.block(0),
                          navier_stokes_solver.boundary->fluid_type,
                          navier_stokes_solver.boundary->symmetry)
       , euler_dofhandler(surface_mesh)
