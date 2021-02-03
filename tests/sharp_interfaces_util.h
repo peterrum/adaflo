@@ -1034,7 +1034,11 @@ namespace dealii
     static const unsigned int dof_index_curvature = 2;
     static const unsigned int quad_index          = 0;
 
-    LevelSetSolver(const FlowParameters &parameters, const TimeStepping &time_stepping)
+    LevelSetSolver(
+      const FlowParameters &                                              parameters,
+      const TimeStepping &                                                time_stepping,
+      const std::map<types::boundary_id, std::shared_ptr<Function<dim>>> &fluid_type,
+      const std::set<types::boundary_id> &                                symmetry)
       : pcout(std::cout, Utilities::MPI::this_mpi_process(MPI_COMM_WORLD) == 0)
       , parameters(parameters)
       , time_stepping(time_stepping)
@@ -1138,9 +1142,8 @@ namespace dealii
 
         LevelSetOKZSolverAdvanceConcentrationBoundaryDescriptor<dim> bcs;
 
-        // TODO
-        // bcs.dirichlet = this->boundary->fluid_type;
-        // bcs.symmetry  = this->boundary->symmetry;
+        bcs.dirichlet = fluid_type;
+        bcs.symmetry  = symmetry;
 
         params.time.time_step_scheme     = this->parameters.time_step_scheme;
         params.time.start_time           = this->parameters.start_time;
@@ -1307,7 +1310,9 @@ namespace dealii
                         const Function<dim> &        initial_values_ls)
       : navier_stokes_solver(navier_stokes_solver)
       , level_set_solver(navier_stokes_solver.get_parameters(),
-                         navier_stokes_solver.time_stepping)
+                         navier_stokes_solver.time_stepping,
+                         navier_stokes_solver.boundary->fluid_type,
+                         navier_stokes_solver.boundary->symmetry)
       , euler_dofhandler(surface_mesh)
       , surface_dofhandler(surface_mesh)
     {
