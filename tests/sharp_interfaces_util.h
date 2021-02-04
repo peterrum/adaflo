@@ -1027,11 +1027,12 @@ namespace dealii
     using VectorType      = LinearAlgebra::distributed::Vector<double>;
     using BlockVectorType = LinearAlgebra::distributed::BlockVector<double>;
 
-    static const unsigned int dof_index_ls        = 0;
-    static const unsigned int dof_index_normal    = 1;
-    static const unsigned int dof_index_curvature = 2;
-    static const unsigned int dof_index_velocity  = 3;
+    static const unsigned int dof_index_ls        = 1;
+    static const unsigned int dof_index_normal    = 2;
+    static const unsigned int dof_index_curvature = 3;
+    static const unsigned int dof_index_velocity  = 0;
     static const unsigned int quad_index          = 0;
+    static const unsigned int quad_index_vel      = 1;
 
     LevelSetSolver(
       const Triangulation<dim> &tria,
@@ -1189,12 +1190,25 @@ namespace dealii
         const FE_Q<dim> fe(parameters.concentration_subdivisions);
         dof_handler.distribute_dofs(fe);
 
+        typename MatrixFree<dim>::AdditionalData data;
+
+        data.tasks_parallel_scheme =
+          Utilities::MPI::n_mpi_processes(get_communicator(dof_handler)) > 1 ?
+            MatrixFree<dim>::AdditionalData::none :
+            MatrixFree<dim>::AdditionalData::partition_color;
+        if (parameters.velocity_degree == 2)
+          data.tasks_block_size = 16;
+        else
+          data.tasks_block_size = 2;
+        data.store_plain_indices = true;
+
         const FESystem<dim> fe_dim(
-          FE_Q<dim>(QGaussLobatto<1>(parameters.velocity_degree)), dim);
+          FE_Q<dim>(QGaussLobatto<1>(parameters.velocity_degree + 1)), dim);
         dof_handler_dim.distribute_dofs(fe_dim);
 
         // @todo: or use QIterated?
         const QIterated<dim> quad(QGauss<1>(2), fe.degree);
+        const QGauss<dim>    quad_vel(parameters.velocity_degree + 1);
 
         // @todo: fill constraints
         for (const auto &i : fluid_type)
@@ -1210,17 +1224,17 @@ namespace dealii
         constraints_force.close();
         hanging_node_constraints.close();
 
-        const std::vector<const DoFHandler<dim> *> dof_handlers{&dof_handler,
+        const std::vector<const DoFHandler<dim> *> dof_handlers{&dof_handler_dim,
                                                                 &dof_handler,
                                                                 &dof_handler,
-                                                                &dof_handler_dim};
+                                                                &dof_handler};
 
         const std::vector<const AffineConstraints<double> *> all_constraints{
-          &constraints, &constraints_normals, &constraints_curvature, &constraints_force};
+          &constraints_force, &constraints, &constraints_normals, &constraints_curvature};
 
-        const std::vector<Quadrature<dim>> quadratures{quad};
+        const std::vector<Quadrature<dim>> quadratures{quad, quad_vel};
 
-        matrix_free.reinit(mapping, dof_handlers, all_constraints, quadratures);
+        matrix_free.reinit(mapping, dof_handlers, all_constraints, quadratures, data);
       }
 
       // Vectors
@@ -1583,9 +1597,11 @@ namespace dealii
       double dummy;
 
       // TODO: select proper MatrixFree object and set right dof/quad index
-      navier_stokes_solver.matrix_free->template cell_loop<double, VectorType>(
+      level_set_solver.get_matrix_free().template cell_loop<double, VectorType>(
         [&](const auto &matrix_free, auto &, const auto &src, auto macro_cells) {
-          FEEvaluation<dim, -1, 0, 1, double> phi(matrix_free, 0, 0);
+          FEEvaluation<dim, -1, 0, 1, double> phi(matrix_free,
+                                                  LevelSetSolver<dim>::dof_index_ls,
+                                                  LevelSetSolver<dim>::quad_index_vel);
 
           for (unsigned int cell = macro_cells.first; cell < macro_cells.second; ++cell)
             {
