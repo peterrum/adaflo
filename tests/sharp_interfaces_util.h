@@ -1451,8 +1451,20 @@ namespace dealii
                          navier_stokes_solver.boundary->fluid_type,
                          navier_stokes_solver.boundary->symmetry)
       , euler_dofhandler(surface_mesh)
-      , surface_dofhandler(surface_mesh)
-    {}
+    {
+      const unsigned int fe_degree = 1;
+
+      FESystem<dim - 1, dim> surface_fe_dim(FE_Q<dim - 1, dim>(fe_degree), dim);
+      euler_dofhandler.distribute_dofs(surface_fe_dim);
+
+      euler_vector.reinit(euler_dofhandler.n_dofs());
+      VectorTools::get_position_vector(euler_dofhandler,
+                                       euler_vector,
+                                       MappingQGeneric<dim - 1, dim>(4));
+      euler_mapping =
+        std::make_shared<MappingFEField<dim - 1, dim, VectorType>>(euler_dofhandler,
+                                                                   euler_vector);
+    }
 
     void
     advance_time_step() override
@@ -1527,6 +1539,7 @@ namespace dealii
 
         DataOut<dim - 1, DoFHandler<dim - 1, dim>> data_out;
         data_out.set_flags(flags);
+        data_out.attach_dof_handler(euler_dofhandler);
 
         data_out.build_patches(
           *euler_mapping,
@@ -1598,11 +1611,11 @@ namespace dealii
     void
     update_surface_tension()
     {
-      compute_force_vector_sharp_interface<dim>(surface_dofhandler.get_triangulation(),
+      compute_force_vector_sharp_interface<dim>(euler_dofhandler.get_triangulation(),
                                                 *euler_mapping,
-                                                surface_dofhandler.get_fe(),
+                                                euler_dofhandler.get_fe().base_element(0),
                                                 QGauss<dim - 1>(
-                                                  surface_dofhandler.get_fe().degree + 1),
+                                                  euler_dofhandler.get_fe().degree + 1),
                                                 navier_stokes_solver.mapping,
                                                 level_set_solver.get_dof_handler(),
                                                 navier_stokes_solver.get_dof_handler_u(),
@@ -1654,7 +1667,6 @@ namespace dealii
 
     // surface mesh
     DoFHandler<dim - 1, dim>               euler_dofhandler;
-    DoFHandler<dim - 1, dim>               surface_dofhandler;
     VectorType                             euler_vector;
     std::shared_ptr<Mapping<dim - 1, dim>> euler_mapping;
   };

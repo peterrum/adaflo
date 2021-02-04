@@ -624,7 +624,6 @@ test(const std::string &parameter_filename)
     for (unsigned int i = 1; i <= 10; ++i)
       {
         level_set_solver.solve();
-        post_process(i);
 
         VectorTools::update_position_vector(time_stepping.step_size(),
                                             level_set_solver.get_dof_handler_dim(),
@@ -633,6 +632,8 @@ test(const std::string &parameter_filename)
                                             surface_dof_handler_dim,
                                             surface_mapping,
                                             euler_vector);
+
+        post_process(i);
 
         time_stepping.next();
       }

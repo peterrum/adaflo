@@ -15,6 +15,9 @@
 # Listing of Parameters
 #
 # mpirun: 2
+subsection Problem-specific
+  set two-phase method = mixed level set
+end
 subsection Two phase
   set density              = 1.
   set density difference   = -0.9
