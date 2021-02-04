@@ -1527,6 +1527,10 @@ namespace dealii
                                  "pressure");
 
         data_out.add_data_vector(level_set_solver.get_dof_handler(),
+                                 level_set_solver.get_level_set_vector(),
+                                 "level_set");
+
+        data_out.add_data_vector(level_set_solver.get_dof_handler(),
                                  level_set_solver.get_curvature_vector(),
                                  "curvature");
 
