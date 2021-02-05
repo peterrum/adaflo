@@ -14,6 +14,7 @@
 // --------------------------------------------------------------------------
 
 #include <deal.II/fe/fe_point_evaluation.h>
+#include <deal.II/fe/fe_q_iso_q1.h>
 #include <deal.II/fe/mapping_fe_field.h>
 
 #include <deal.II/grid/grid_tools_cache.h>
@@ -1187,8 +1188,11 @@ namespace dealii
       // MatrixFree
       {
         // @todo: or use FE_Q_iso_Q1?
-        const FE_Q<dim> fe(parameters.concentration_subdivisions);
+        const FE_Q_iso_Q1<dim> fe(parameters.concentration_subdivisions);
         dof_handler.distribute_dofs(fe);
+
+        pcout << "Number of level set degrees of freedom: " << dof_handler.n_dofs()
+              << std::endl;
 
         typename MatrixFree<dim>::AdditionalData data;
 
@@ -1262,6 +1266,9 @@ namespace dealii
         compute_cell_diameters(
           matrix_free, dof_index_ls, cell_diameters, minimal_edge_length, epsilon_used);
 
+        pcout << "Mesh size (largest/smallest element length at finest level): "
+              << epsilon_used << " / " << minimal_edge_length << std::endl;
+
         epsilon_used =
           parameters.epsilon / parameters.concentration_subdivisions * epsilon_used;
 
@@ -1286,6 +1293,12 @@ namespace dealii
       }
 
       VectorTools::interpolate(mapping, dof_handler, initial_values_ls, ls_solution);
+
+
+      // transform_distance_function
+      for (unsigned int i = 0; i < ls_solution.local_size(); i++)
+        ls_solution.local_element(i) =
+          -std::tanh(ls_solution.local_element(i) / (2. * epsilon_used));
 
       reinitialize(true);
 

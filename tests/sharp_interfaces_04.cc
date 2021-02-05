@@ -139,8 +139,11 @@ MicroFluidicProblem<dim>::run()
   navier_stokes_solver.set_no_slip_boundary(0);
   navier_stokes_solver.fix_pressure_constant(0);
   navier_stokes_solver.set_symmetry_boundary(2);
+  // navier_stokes_solver.boundary->fluid_type[0] =
+  // std::make_shared<Functions::ConstantFunction<dim>>(1.0);
 
   navier_stokes_solver.setup_problem(Functions::ZeroFunction<dim>(dim));
+  navier_stokes_solver.print_n_dofs();
 
   Triangulation<dim - 1, dim> surface_mesh;
   GridGenerator::hyper_sphere(surface_mesh, Point<dim>(0.5, 0.5), 0.25);
