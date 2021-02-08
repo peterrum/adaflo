@@ -925,13 +925,10 @@ compute_force_vector_sharp_interface(const Quadrature<dim - 1> &surface_quad,
   std::vector<types::global_dof_index> local_dof_indices;
 
   // loop over all cells
-  for (const auto i : dof_handler.get_triangulation().active_cell_iterators())
+  for (const auto cell : dof_handler.active_cell_iterators())
     {
-      typename DoFHandler<dim>::active_cell_iterator cell = {
-        &dof_handler.get_triangulation(), i->level(), i->index(), &dof_handler};
-
       typename DoFHandler<dim>::active_cell_iterator cell_dim = {
-        &dof_handler.get_triangulation(), i->level(), i->index(), &dof_handler_dim};
+        &dof_handler.get_triangulation(), cell->level(), cell->index(), &dof_handler_dim};
 
       // determine if cell is cut by the interface and if yes, determine the quadrature
       // point location and weight
@@ -969,7 +966,7 @@ compute_force_vector_sharp_interface(const Quadrature<dim - 1> &surface_quad,
             for (const auto q : fe_eval.quadrature_point_indices())
               {
                 points.emplace_back(
-                  mapping.transform_real_to_unit_cell(i, fe_eval.quadrature_point(q)));
+                  mapping.transform_real_to_unit_cell(cell, fe_eval.quadrature_point(q)));
                 weights.emplace_back(fe_eval.JxW(q));
               }
           }
