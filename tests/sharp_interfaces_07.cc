@@ -43,8 +43,7 @@ process_sub_cell(const std::vector<double> &         ls_values,
     c += (ls_values[mask[i]] > 0) * scale;
 
   if (c == 0 || c == 15)
-    return;
-
+    return; // nothing to do
 
   const auto process_points = [&](const auto &lines) {
     const double w0 = std::abs(ls_values[mask[lines[0]]]);
@@ -97,23 +96,30 @@ process_sub_cell(const std::vector<double> &         ls_values,
   }};
 
   process_lines(table[c]);
-
-  std::cout << vertices.size() << " " << cells.size() << std::endl;
 }
 
 template <int dim>
 void
 test()
 {
-  const unsigned int n_refinements = 2;
-  const unsigned int fe_degree     = 2;
+  const unsigned int n_refinements  = 2;
+  const unsigned int fe_degree      = 2;
+  const unsigned int n_subdivisions = 3;
 
   std::vector<Point<dim>> quadrature_points;
-  quadrature_points.emplace_back(0, 0);
-  quadrature_points.emplace_back(1, 0);
-  quadrature_points.emplace_back(0, 1);
-  quadrature_points.emplace_back(1, 1);
-  quadrature_points.emplace_back(0.5, 0.5);
+
+  for (unsigned int j = 0; j <= n_subdivisions; ++j)
+    for (unsigned int i = 0; i <= n_subdivisions; ++i)
+      quadrature_points.emplace_back(1.0 / n_subdivisions * i, 1.0 / n_subdivisions * j);
+
+  for (unsigned int j = 0; j < n_subdivisions; ++j)
+    for (unsigned int i = 0; i < n_subdivisions; ++i)
+      quadrature_points.emplace_back(1.0 / n_subdivisions * (i + 0.5),
+                                     1.0 / n_subdivisions * (j + 0.5));
+
+  for (const auto i : quadrature_points)
+    std::cout << i << std::endl;
+  std::cout << std::endl;
 
   Quadrature<dim> quadrature(quadrature_points);
 
@@ -145,10 +151,19 @@ test()
 
       fe_values.get_function_values(ls_vector, ls_values);
 
-      std::vector<unsigned int> mask{0, 1, 3, 2, 4};
+      for (unsigned int j = 0; j < n_subdivisions; ++j)
+        for (unsigned int i = 0; i < n_subdivisions; ++i)
+          {
+            std::vector<unsigned int> mask{(n_subdivisions + 1) * (j + 0) + (i + 0),
+                                           (n_subdivisions + 1) * (j + 0) + (i + 1),
+                                           (n_subdivisions + 1) * (j + 1) + (i + 1),
+                                           (n_subdivisions + 1) * (j + 1) + (i + 0),
+                                           (n_subdivisions + 1) * (n_subdivisions + 1) +
+                                             (n_subdivisions * j + i)};
 
-      process_sub_cell(
-        ls_values, fe_values.get_quadrature_points(), mask, vertices, cells);
+            process_sub_cell(
+              ls_values, fe_values.get_quadrature_points(), mask, vertices, cells);
+          }
     }
   Triangulation<dim - 1, dim> tria_interface;
   tria_interface.create_triangulation(vertices, cells, {});
