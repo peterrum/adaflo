@@ -924,23 +924,34 @@ compute_force_vector_sharp_interface(const Quadrature<dim - 1> &surface_quad,
   std::vector<double>                  buffer_dim;
   std::vector<types::global_dof_index> local_dof_indices;
 
+  // loop over all cells
   for (const auto i : dof_handler.get_triangulation().active_cell_iterators())
     {
-      std::vector<Point<dim>>          vertices;
-      std::vector<::CellData<dim - 1>> cells;
-
       typename DoFHandler<dim>::active_cell_iterator cell = {
         &dof_handler.get_triangulation(), i->level(), i->index(), &dof_handler};
 
-      mc.process_cell(cell, ls_vector, vertices, cells);
+      typename DoFHandler<dim>::active_cell_iterator cell_dim = {
+        &dof_handler.get_triangulation(), i->level(), i->index(), &dof_handler_dim};
 
-      if (vertices.size() == 0)
-        continue;
+      // determine if cell is cut by the interface and if yes, determine the quadrature
+      // point location and weight
+      const auto [points, weights] =
+        [&]() -> std::tuple<std::vector<Point<dim>>, std::vector<double>> {
+        // determine points and cells of aux surface triangulation
+        std::vector<Point<dim>>          vertices;
+        std::vector<::CellData<dim - 1>> cells;
 
-      std::vector<Point<dim>> points;
-      std::vector<double>     weights;
+        // run square/cube marching algorithm
+        mc.process_cell(cell, ls_vector, vertices, cells);
 
-      {
+        if (vertices.size() == 0)
+          return {}; // cell is not cut by interface -> no quadrature points have the be
+                     // determined
+
+        std::vector<Point<dim>> points;
+        std::vector<double>     weights;
+
+        // create aux triangulation of subcells
         Triangulation<dim - 1, dim> tria;
         tria.create_triangulation(vertices, cells, {});
 
@@ -949,10 +960,12 @@ compute_force_vector_sharp_interface(const Quadrature<dim - 1> &surface_quad,
                                        surface_quad,
                                        update_quadrature_points | update_JxW_values);
 
+        // loop over all cells ...
         for (const auto &cell : tria.active_cell_iterators())
           {
             fe_eval.reinit(cell);
 
+            // ... and collect quadrature points and weights
             for (const auto q : fe_eval.quadrature_point_indices())
               {
                 points.emplace_back(
@@ -960,17 +973,19 @@ compute_force_vector_sharp_interface(const Quadrature<dim - 1> &surface_quad,
                 weights.emplace_back(fe_eval.JxW(q));
               }
           }
-      }
+        return {points, weights};
+      }();
 
-      typename DoFHandler<dim>::active_cell_iterator cell_dim = {
-        &dof_handler.get_triangulation(), i->level(), i->index(), &dof_handler_dim};
+      if (points.size() == 0)
+        continue; // cell is not cut but the interface -> nothing to do
+
+      // proceed as usual
 
       local_dof_indices.resize(cell->get_fe().n_dofs_per_cell());
       buffer.resize(cell->get_fe().n_dofs_per_cell());
       buffer_dim.resize(cell->get_fe().n_dofs_per_cell() * dim);
 
       cell->get_dof_indices(local_dof_indices);
-
 
       const unsigned int n_points = points.size();
 
