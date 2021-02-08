@@ -741,6 +741,7 @@ public:
                       Triangulation<dim - 1, dim> &surface_mesh,
                       const Function<dim> &        initial_values_ls)
     : use_auxiliary_surface_mesh(true)
+    , use_sharp_interface(true)
     , navier_stokes_solver(navier_stokes_solver)
     , level_set_solver(navier_stokes_solver.get_dof_handler_u().get_triangulation(),
                        initial_values_ls,
@@ -773,8 +774,10 @@ public:
   }
 
   MixedLevelSetSolver(NavierStokes<dim> &  navier_stokes_solver,
-                      const Function<dim> &initial_values_ls)
+                      const Function<dim> &initial_values_ls,
+                      const bool           use_sharp_interface = true)
     : use_auxiliary_surface_mesh(false)
+    , use_sharp_interface(use_sharp_interface)
     , navier_stokes_solver(navier_stokes_solver)
     , level_set_solver(navier_stokes_solver.get_dof_handler_u().get_triangulation(),
                        initial_values_ls,
@@ -947,7 +950,7 @@ private:
   void
   update_surface_tension()
   {
-    if (use_auxiliary_surface_mesh)
+    if (use_auxiliary_surface_mesh && use_sharp_interface)
       compute_force_vector_sharp_interface<dim>(euler_dofhandler.get_triangulation(),
                                                 *euler_mapping,
                                                 euler_dofhandler.get_fe().base_element(0),
@@ -959,7 +962,7 @@ private:
                                                 level_set_solver.get_normal_vector(),
                                                 level_set_solver.get_curvature_vector(),
                                                 navier_stokes_solver.user_rhs.block(0));
-    else
+    else if (!use_auxiliary_surface_mesh && use_sharp_interface)
       compute_force_vector_sharp_interface(QGauss<dim - 1>(2 /*TODO*/),
                                            navier_stokes_solver.mapping,
                                            level_set_solver.get_dof_handler(),
@@ -968,6 +971,17 @@ private:
                                            level_set_solver.get_curvature_vector(),
                                            level_set_solver.get_level_set_vector(),
                                            navier_stokes_solver.user_rhs.block(0));
+    else if (!use_auxiliary_surface_mesh && !use_sharp_interface)
+      compute_force_vector_regularized(level_set_solver.get_matrix_free(),
+                                       level_set_solver.get_level_set_vector(),
+                                       level_set_solver.get_curvature_vector(),
+                                       navier_stokes_solver.user_rhs.block(0),
+                                       LevelSetSolver<dim>::dof_index_ls,
+                                       LevelSetSolver<dim>::dof_index_curvature,
+                                       LevelSetSolver<dim>::dof_index_velocity,
+                                       LevelSetSolver<dim>::quad_index_vel);
+    else
+      AssertThrow(false, ExcNotImplemented());
   }
 
   void
@@ -1008,6 +1022,7 @@ private:
   }
 
   const bool use_auxiliary_surface_mesh;
+  const bool use_sharp_interface;
 
   // background mesh
   NavierStokes<dim> & navier_stokes_solver;

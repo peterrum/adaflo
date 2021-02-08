@@ -24,6 +24,8 @@
 
 #include <deal.II/grid/grid_tools_cache.h>
 
+#include <deal.II/matrix_free/fe_evaluation.h>
+
 #include <deal.II/numerics/vector_tools.h>
 
 #include <boost/geometry.hpp>
@@ -1032,6 +1034,73 @@ compute_force_vector_sharp_interface(const Quadrature<dim - 1> &surface_quad,
 
       constraints.distribute_local_to_global(buffer_dim, local_dof_indices, force_vector);
     }
+}
+
+
+
+template <int dim, typename VectorType1, typename VectorType2>
+void
+compute_force_vector_regularized(const MatrixFree<dim, double> &matrix_free,
+                                 const VectorType1 &            ls_solution,
+                                 const VectorType1 &            curvature_solution,
+                                 VectorType2 &                  force_rhs,
+                                 const unsigned int             dof_index_ls,
+                                 const unsigned int             dof_index_curvature,
+                                 const unsigned int             dof_index_normal,
+                                 const unsigned int             quad_index)
+{
+  (void)matrix_free;
+  (void)ls_solution;
+  (void)curvature_solution;
+
+  auto level_set_as_heaviside = ls_solution;
+  level_set_as_heaviside.add(1.0);
+  level_set_as_heaviside *= 0.5;
+
+  const double surface_tension_coefficient = 1.0;
+
+  matrix_free.template cell_loop<VectorType2, VectorType1>(
+    [&](const auto &matrix_free,
+        auto &      force_rhs,
+        const auto &level_set_as_heaviside,
+        auto        macro_cells) {
+      FEEvaluation<dim, -1, 0, 1, double> level_set(matrix_free,
+                                                    dof_index_ls,
+                                                    quad_index);
+
+      FEEvaluation<dim, -1, 0, 1, double> curvature(matrix_free,
+                                                    dof_index_curvature,
+                                                    quad_index);
+
+      FEEvaluation<dim, -1, 0, dim, double> surface_tension(matrix_free,
+                                                            dof_index_normal,
+                                                            quad_index);
+
+      for (unsigned int cell = macro_cells.first; cell < macro_cells.second; ++cell)
+        {
+          level_set.reinit(cell);
+          level_set.read_dof_values_plain(level_set_as_heaviside);
+          level_set.evaluate(false, true);
+
+          surface_tension.reinit(cell);
+
+          curvature.reinit(cell);
+          curvature.read_dof_values_plain(curvature_solution);
+          curvature.evaluate(true, false);
+
+          for (unsigned int q_index = 0; q_index < surface_tension.n_q_points; ++q_index)
+            {
+              surface_tension.submit_value(surface_tension_coefficient *
+                                             level_set.get_gradient(q_index) *
+                                             curvature.get_value(q_index),
+                                           q_index);
+            }
+          surface_tension.integrate_scatter(true, false, force_rhs);
+        }
+    },
+    force_rhs,
+    level_set_as_heaviside,
+    true);
 }
 
 #endif
