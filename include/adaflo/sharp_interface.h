@@ -927,6 +927,15 @@ private:
                                               level_set_solver.get_normal_vector(),
                                               level_set_solver.get_curvature_vector(),
                                               navier_stokes_solver.user_rhs.block(0));
+
+    compute_force_vector_sharp_interface(QGauss<dim - 1>(
+                                           euler_dofhandler.get_fe().degree + 1),
+                                         navier_stokes_solver.mapping,
+                                         level_set_solver.get_dof_handler(),
+                                         navier_stokes_solver.get_dof_handler_u(),
+                                         level_set_solver.get_normal_vector(),
+                                         level_set_solver.get_curvature_vector(),
+                                         navier_stokes_solver.user_rhs.block(0));
   }
 
   void

@@ -893,4 +893,25 @@ compute_force_vector_sharp_interface(const Triangulation<dim - 1, dim> &surface_
     }
 }
 
+
+
+template <int dim, typename VectorType, typename BlockVectorType>
+void
+compute_force_vector_sharp_interface(const Quadrature<dim - 1> &surface_quad,
+                                     const Mapping<dim> &       mapping,
+                                     const DoFHandler<dim> &    dof_handler,
+                                     const DoFHandler<dim> &    dof_handler_dim,
+                                     const BlockVectorType &    normal_vector_field,
+                                     const VectorType &         curvature_solution,
+                                     VectorType &               force_vector)
+{
+  (void)surface_quad;
+  (void)mapping;
+  (void)dof_handler;
+  (void)dof_handler_dim;
+  (void)normal_vector_field;
+  (void)curvature_solution;
+  (void)force_vector;
+}
+
 #endif
