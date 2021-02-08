@@ -29,74 +29,139 @@ public:
   }
 };
 
-template <int dim, int spacedim>
-void
-process_sub_cell(const std::vector<double> &         ls_values,
-                 const std::vector<Point<spacedim>> &points,
-                 const std::vector<unsigned int>     mask,
-                 std::vector<Point<spacedim>> &      vertices,
-                 std::vector<::CellData<dim>> &      cells)
+template <int dim>
+class MarchingCubeAlgorithm
 {
-  unsigned int c = 0;
+public:
+  MarchingCubeAlgorithm(const Mapping<dim, dim> &      mapping,
+                        const FiniteElement<dim, dim> &fe,
+                        const unsigned int             n_subdivisions)
+    : n_subdivisions(n_subdivisions)
+    , fe_values(mapping,
+                fe,
+                create_qudrature_rule(n_subdivisions),
+                update_values | update_quadrature_points)
+    , ls_values(fe_values.n_quadrature_points)
+  {
+    AssertDimension(dim, 2);
+  }
 
-  for (unsigned int i = 0, scale = 1; i < 4; ++i, scale *= 2)
-    c += (ls_values[mask[i]] > 0) * scale;
+  template <typename CellType, typename VectorType>
+  void
+  process_cell(const CellType &                  cell,
+               const VectorType &                ls_vector,
+               std::vector<Point<dim>> &         vertices,
+               std::vector<::CellData<dim - 1>> &cells)
+  {
+    fe_values.reinit(cell);
+    fe_values.get_function_values(ls_vector, ls_values);
 
-  if (c == 0 || c == 15)
-    return; // nothing to do
+    for (unsigned int j = 0; j < n_subdivisions; ++j)
+      for (unsigned int i = 0; i < n_subdivisions; ++i)
+        {
+          std::vector<unsigned int> mask{(n_subdivisions + 1) * (j + 0) + (i + 0),
+                                         (n_subdivisions + 1) * (j + 0) + (i + 1),
+                                         (n_subdivisions + 1) * (j + 1) + (i + 1),
+                                         (n_subdivisions + 1) * (j + 1) + (i + 0),
+                                         (n_subdivisions + 1) * (n_subdivisions + 1) +
+                                           (n_subdivisions * j + i)};
 
-  const auto process_points = [&](const auto &lines) {
-    const double w0 = std::abs(ls_values[mask[lines[0]]]);
-    const double w1 = std::abs(ls_values[mask[lines[1]]]);
+          process_sub_cell(
+            ls_values, fe_values.get_quadrature_points(), mask, vertices, cells);
+        }
+  }
 
-    return points[mask[lines[0]]] * (w1 / (w0 + w1)) +
-           points[mask[lines[1]]] * (w0 / (w0 + w1));
-  };
+private:
+  static Quadrature<dim>
+  create_qudrature_rule(const unsigned int n_subdivisions)
+  {
+    std::vector<Point<dim>> quadrature_points;
 
-  const auto process_lines = [&](const auto &lines) {
-    std::array<std::array<unsigned int, 2>, 4> table{
-      {{{0, 3}}, {{1, 2}}, {{0, 1}}, {{3, 2}}}};
+    for (unsigned int j = 0; j <= n_subdivisions; ++j)
+      for (unsigned int i = 0; i <= n_subdivisions; ++i)
+        quadrature_points.emplace_back(1.0 / n_subdivisions * i,
+                                       1.0 / n_subdivisions * j);
 
-    const auto p0 = process_points(table[lines[0]]);
-    const auto p1 = process_points(table[lines[1]]);
+    for (unsigned int j = 0; j < n_subdivisions; ++j)
+      for (unsigned int i = 0; i < n_subdivisions; ++i)
+        quadrature_points.emplace_back(1.0 / n_subdivisions * (i + 0.5),
+                                       1.0 / n_subdivisions * (j + 0.5));
 
-    cells.resize(cells.size() + 1);
-    cells.back().vertices[0] = vertices.size();
-    cells.back().vertices[1] = vertices.size() + 1;
+    return {quadrature_points};
+  }
 
-    vertices.emplace_back(p0);
-    vertices.emplace_back(p1);
-  };
+  static void
+  process_sub_cell(const std::vector<double> &       ls_values,
+                   const std::vector<Point<dim>> &   points,
+                   const std::vector<unsigned int>   mask,
+                   std::vector<Point<dim>> &         vertices,
+                   std::vector<::CellData<dim - 1>> &cells)
+  {
+    unsigned int c = 0;
 
-  if (c == 5 || c == 10)
-    {
-      Assert(false, ExcNotImplemented());
-      return;
-    }
+    for (unsigned int i = 0, scale = 1; i < 4; ++i, scale *= 2)
+      c += (ls_values[mask[i]] > 0) * scale;
 
-  static const unsigned int X = -1;
+    if (c == 0 || c == 15)
+      return; // nothing to do
 
-  std::array<std::array<unsigned int, 2>, 16> table{{
-    {{X, X}},
-    {{0, 2}},
-    {{1, 2}},
-    {{0, 1}}, //  0- 3
-    {{1, 3}},
-    {{X, X}},
-    {{2, 3}},
-    {{0, 3}}, //  4- 7
-    {{0, 3}},
-    {{2, 3}},
-    {{X, X}},
-    {{1, 3}}, //  8-11
-    {{0, 1}},
-    {{2, 1}},
-    {{0, 2}},
-    {{X, X}} // 12-15
-  }};
+    const auto process_points = [&](const auto &lines) {
+      const double w0 = std::abs(ls_values[mask[lines[0]]]);
+      const double w1 = std::abs(ls_values[mask[lines[1]]]);
 
-  process_lines(table[c]);
-}
+      return points[mask[lines[0]]] * (w1 / (w0 + w1)) +
+             points[mask[lines[1]]] * (w0 / (w0 + w1));
+    };
+
+    const auto process_lines = [&](const auto &lines) {
+      std::array<std::array<unsigned int, 2>, 4> table{
+        {{{0, 3}}, {{1, 2}}, {{0, 1}}, {{3, 2}}}};
+
+      const auto p0 = process_points(table[lines[0]]);
+      const auto p1 = process_points(table[lines[1]]);
+
+      cells.resize(cells.size() + 1);
+      cells.back().vertices[0] = vertices.size();
+      cells.back().vertices[1] = vertices.size() + 1;
+
+      vertices.emplace_back(p0);
+      vertices.emplace_back(p1);
+    };
+
+    if (c == 5 || c == 10)
+      {
+        Assert(false, ExcNotImplemented());
+        return;
+      }
+
+    static const unsigned int X = -1;
+
+    std::array<std::array<unsigned int, 2>, 16> table{{
+      {{X, X}},
+      {{0, 2}},
+      {{1, 2}},
+      {{0, 1}}, //  0- 3
+      {{1, 3}},
+      {{X, X}},
+      {{2, 3}},
+      {{0, 3}}, //  4- 7
+      {{0, 3}},
+      {{2, 3}},
+      {{X, X}},
+      {{1, 3}}, //  8-11
+      {{0, 1}},
+      {{2, 1}},
+      {{0, 2}},
+      {{X, X}} // 12-15
+    }};
+
+    process_lines(table[c]);
+  }
+
+  const unsigned int  n_subdivisions;
+  FEValues<dim>       fe_values;
+  std::vector<double> ls_values;
+};
 
 template <int dim>
 void
@@ -106,23 +171,6 @@ test()
   const unsigned int fe_degree      = 2;
   const unsigned int n_subdivisions = 3;
 
-  std::vector<Point<dim>> quadrature_points;
-
-  for (unsigned int j = 0; j <= n_subdivisions; ++j)
-    for (unsigned int i = 0; i <= n_subdivisions; ++i)
-      quadrature_points.emplace_back(1.0 / n_subdivisions * i, 1.0 / n_subdivisions * j);
-
-  for (unsigned int j = 0; j < n_subdivisions; ++j)
-    for (unsigned int i = 0; i < n_subdivisions; ++i)
-      quadrature_points.emplace_back(1.0 / n_subdivisions * (i + 0.5),
-                                     1.0 / n_subdivisions * (j + 0.5));
-
-  for (const auto i : quadrature_points)
-    std::cout << i << std::endl;
-  std::cout << std::endl;
-
-  Quadrature<dim> quadrature(quadrature_points);
-
   Triangulation<dim> tria;
   GridGenerator::hyper_cube(tria);
   tria.refine_global(n_refinements);
@@ -130,41 +178,20 @@ test()
   DoFHandler<dim> dof_handler(tria);
   dof_handler.distribute_dofs(FE_Q<dim>{fe_degree});
 
-  Vector<double>      ls_vector(dof_handler.n_dofs());
-  std::vector<double> ls_values(quadrature.size());
+  Vector<double> ls_vector(dof_handler.n_dofs());
 
   MappingQGeneric<dim> mapping(1);
 
   VectorTools::interpolate(mapping, dof_handler, LSFunction<dim>(), ls_vector);
 
-  FEValues<dim> fe_values(mapping,
-                          dof_handler.get_fe(),
-                          quadrature,
-                          update_values | update_quadrature_points);
-
   std::vector<Point<dim>>          vertices;
   std::vector<::CellData<dim - 1>> cells;
 
+  MarchingCubeAlgorithm<dim> mc(mapping, dof_handler.get_fe(), n_subdivisions);
+
   for (const auto &cell : dof_handler.active_cell_iterators())
-    {
-      fe_values.reinit(cell);
+    mc.process_cell(cell, ls_vector, vertices, cells);
 
-      fe_values.get_function_values(ls_vector, ls_values);
-
-      for (unsigned int j = 0; j < n_subdivisions; ++j)
-        for (unsigned int i = 0; i < n_subdivisions; ++i)
-          {
-            std::vector<unsigned int> mask{(n_subdivisions + 1) * (j + 0) + (i + 0),
-                                           (n_subdivisions + 1) * (j + 0) + (i + 1),
-                                           (n_subdivisions + 1) * (j + 1) + (i + 1),
-                                           (n_subdivisions + 1) * (j + 1) + (i + 0),
-                                           (n_subdivisions + 1) * (n_subdivisions + 1) +
-                                             (n_subdivisions * j + i)};
-
-            process_sub_cell(
-              ls_values, fe_values.get_quadrature_points(), mask, vertices, cells);
-          }
-    }
   Triangulation<dim - 1, dim> tria_interface;
   tria_interface.create_triangulation(vertices, cells, {});
 
