@@ -925,7 +925,7 @@ compute_force_vector_sharp_interface(const Quadrature<dim - 1> &surface_quad,
   std::vector<types::global_dof_index> local_dof_indices;
 
   // loop over all cells
-  for (const auto cell : dof_handler.active_cell_iterators())
+  for (const auto &cell : dof_handler.active_cell_iterators())
     {
       typename DoFHandler<dim>::active_cell_iterator cell_dim = {
         &dof_handler.get_triangulation(), cell->level(), cell->index(), &dof_handler_dim};
@@ -935,13 +935,13 @@ compute_force_vector_sharp_interface(const Quadrature<dim - 1> &surface_quad,
       const auto [points, weights] =
         [&]() -> std::tuple<std::vector<Point<dim>>, std::vector<double>> {
         // determine points and cells of aux surface triangulation
-        std::vector<Point<dim>>          vertices;
-        std::vector<::CellData<dim - 1>> cells;
+        std::vector<Point<dim>>          surface_vertices;
+        std::vector<::CellData<dim - 1>> surface_cells;
 
         // run square/cube marching algorithm
-        mc.process_cell(cell, ls_vector, vertices, cells);
+        mc.process_cell(cell, ls_vector, surface_vertices, surface_cells);
 
-        if (vertices.size() == 0)
+        if (surface_vertices.size() == 0)
           return {}; // cell is not cut by interface -> no quadrature points have the be
                      // determined
 
@@ -949,8 +949,8 @@ compute_force_vector_sharp_interface(const Quadrature<dim - 1> &surface_quad,
         std::vector<double>     weights;
 
         // create aux triangulation of subcells
-        Triangulation<dim - 1, dim> tria;
-        tria.create_triangulation(vertices, cells, {});
+        Triangulation<dim - 1, dim> surface_triangulation;
+        surface_triangulation.create_triangulation(surface_vertices, surface_cells, {});
 
         FE_Nothing<dim - 1, dim> fe;
         FEValues<dim - 1, dim>   fe_eval(fe,
@@ -958,7 +958,7 @@ compute_force_vector_sharp_interface(const Quadrature<dim - 1> &surface_quad,
                                        update_quadrature_points | update_JxW_values);
 
         // loop over all cells ...
-        for (const auto &cell : tria.active_cell_iterators())
+        for (const auto &cell : surface_triangulation.active_cell_iterators())
           {
             fe_eval.reinit(cell);
 
