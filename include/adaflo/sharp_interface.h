@@ -765,6 +765,11 @@ public:
     euler_mapping =
       std::make_shared<MappingFEField<dim - 1, dim, VectorType>>(euler_dofhandler,
                                                                  euler_vector);
+
+    // initialize
+    this->update_phases();
+    this->update_gravity_force();
+    this->update_surface_tension();
   }
 
   MixedLevelSetSolver(NavierStokes<dim> &  navier_stokes_solver,
@@ -780,7 +785,12 @@ public:
                        navier_stokes_solver.solution_old_old.block(0),
                        navier_stokes_solver.boundary->fluid_type,
                        navier_stokes_solver.boundary->symmetry)
-  {}
+  {
+    // initialize
+    this->update_phases();
+    this->update_gravity_force();
+    this->update_surface_tension();
+  }
 
   void
   advance_time_step() override
