@@ -928,7 +928,11 @@ compute_force_vector_sharp_interface(const Quadrature<dim - 1> &surface_quad,
     {
       std::vector<Point<dim>>          vertices;
       std::vector<::CellData<dim - 1>> cells;
-      mc.process_cell(i, ls_vector, vertices, cells);
+
+      typename DoFHandler<dim>::active_cell_iterator cell = {
+        &dof_handler.get_triangulation(), i->level(), i->index(), &dof_handler};
+
+      mc.process_cell(cell, ls_vector, vertices, cells);
 
       if (vertices.size() == 0)
         continue;
@@ -957,9 +961,6 @@ compute_force_vector_sharp_interface(const Quadrature<dim - 1> &surface_quad,
               }
           }
       }
-
-      typename DoFHandler<dim>::active_cell_iterator cell = {
-        &dof_handler.get_triangulation(), i->level(), i->index(), &dof_handler};
 
       typename DoFHandler<dim>::active_cell_iterator cell_dim = {
         &dof_handler.get_triangulation(), i->level(), i->index(), &dof_handler_dim};
