@@ -740,7 +740,8 @@ public:
   MixedLevelSetSolver(NavierStokes<dim> &          navier_stokes_solver,
                       Triangulation<dim - 1, dim> &surface_mesh,
                       const Function<dim> &        initial_values_ls)
-    : navier_stokes_solver(navier_stokes_solver)
+    : use_auxiliary_surface_mesh(true)
+    , navier_stokes_solver(navier_stokes_solver)
     , level_set_solver(navier_stokes_solver.get_dof_handler_u().get_triangulation(),
                        initial_values_ls,
                        navier_stokes_solver.get_parameters(),
@@ -766,12 +767,28 @@ public:
                                                                  euler_vector);
   }
 
+  MixedLevelSetSolver(NavierStokes<dim> &  navier_stokes_solver,
+                      const Function<dim> &initial_values_ls)
+    : use_auxiliary_surface_mesh(false)
+    , navier_stokes_solver(navier_stokes_solver)
+    , level_set_solver(navier_stokes_solver.get_dof_handler_u().get_triangulation(),
+                       initial_values_ls,
+                       navier_stokes_solver.get_parameters(),
+                       navier_stokes_solver.time_stepping,
+                       navier_stokes_solver.solution.block(0),
+                       navier_stokes_solver.solution_old.block(0),
+                       navier_stokes_solver.solution_old_old.block(0),
+                       navier_stokes_solver.boundary->fluid_type,
+                       navier_stokes_solver.boundary->symmetry)
+  {}
+
   void
   advance_time_step() override
   {
     level_set_solver.solve();
 
-    this->move_surface_mesh();
+    if (use_auxiliary_surface_mesh)
+      this->move_surface_mesh();
     this->update_phases();
     this->update_gravity_force();
     this->update_surface_tension();
@@ -838,31 +855,35 @@ public:
     }
 
     // surface mesh
-    {
-      DataOutBase::VtkFlags flags;
+    if (use_auxiliary_surface_mesh)
+      {
+        DataOutBase::VtkFlags flags;
 
-      DataOut<dim - 1, DoFHandler<dim - 1, dim>> data_out;
-      data_out.set_flags(flags);
-      data_out.attach_dof_handler(euler_dofhandler);
+        DataOut<dim - 1, DoFHandler<dim - 1, dim>> data_out;
+        data_out.set_flags(flags);
+        data_out.attach_dof_handler(euler_dofhandler);
 
-      data_out.build_patches(
-        *euler_mapping,
-        euler_dofhandler.get_fe().degree + 1,
-        DataOut<dim - 1, DoFHandler<dim - 1, dim>>::CurvedCellRegion::curved_inner_cells);
+        data_out.build_patches(
+          *euler_mapping,
+          euler_dofhandler.get_fe().degree + 1,
+          DataOut<dim - 1,
+                  DoFHandler<dim - 1, dim>>::CurvedCellRegion::curved_inner_cells);
 
-      std::filesystem::path path(output_filename + "_surface");
+        std::filesystem::path path(output_filename + "_surface");
 
-      data_out.write_vtu_with_pvtu_record(path.parent_path().string() + "/",
-                                          path.filename(),
-                                          navier_stokes_solver.time_stepping.step_no(),
-                                          MPI_COMM_WORLD);
-    }
+        data_out.write_vtu_with_pvtu_record(path.parent_path().string() + "/",
+                                            path.filename(),
+                                            navier_stokes_solver.time_stepping.step_no(),
+                                            MPI_COMM_WORLD);
+      }
   }
 
 private:
   void
   move_surface_mesh()
   {
+    Assert(use_auxiliary_surface_mesh, ExcNotImplemented());
+
     VectorTools::update_position_vector(navier_stokes_solver.time_stepping.step_size(),
                                         navier_stokes_solver.get_dof_handler_u(),
                                         navier_stokes_solver.mapping,
@@ -916,27 +937,27 @@ private:
   void
   update_surface_tension()
   {
-    compute_force_vector_sharp_interface<dim>(euler_dofhandler.get_triangulation(),
-                                              *euler_mapping,
-                                              euler_dofhandler.get_fe().base_element(0),
-                                              QGauss<dim - 1>(
-                                                euler_dofhandler.get_fe().degree + 1),
-                                              navier_stokes_solver.mapping,
-                                              level_set_solver.get_dof_handler(),
-                                              navier_stokes_solver.get_dof_handler_u(),
-                                              level_set_solver.get_normal_vector(),
-                                              level_set_solver.get_curvature_vector(),
-                                              navier_stokes_solver.user_rhs.block(0));
-
-    compute_force_vector_sharp_interface(QGauss<dim - 1>(
-                                           euler_dofhandler.get_fe().degree + 1),
-                                         navier_stokes_solver.mapping,
-                                         level_set_solver.get_dof_handler(),
-                                         navier_stokes_solver.get_dof_handler_u(),
-                                         level_set_solver.get_normal_vector(),
-                                         level_set_solver.get_curvature_vector(),
-                                         level_set_solver.get_level_set_vector(),
-                                         navier_stokes_solver.user_rhs.block(0));
+    if (use_auxiliary_surface_mesh)
+      compute_force_vector_sharp_interface<dim>(euler_dofhandler.get_triangulation(),
+                                                *euler_mapping,
+                                                euler_dofhandler.get_fe().base_element(0),
+                                                QGauss<dim - 1>(
+                                                  euler_dofhandler.get_fe().degree + 1),
+                                                navier_stokes_solver.mapping,
+                                                level_set_solver.get_dof_handler(),
+                                                navier_stokes_solver.get_dof_handler_u(),
+                                                level_set_solver.get_normal_vector(),
+                                                level_set_solver.get_curvature_vector(),
+                                                navier_stokes_solver.user_rhs.block(0));
+    else
+      compute_force_vector_sharp_interface(QGauss<dim - 1>(2 /*TODO*/),
+                                           navier_stokes_solver.mapping,
+                                           level_set_solver.get_dof_handler(),
+                                           navier_stokes_solver.get_dof_handler_u(),
+                                           level_set_solver.get_normal_vector(),
+                                           level_set_solver.get_curvature_vector(),
+                                           level_set_solver.get_level_set_vector(),
+                                           navier_stokes_solver.user_rhs.block(0));
   }
 
   void
@@ -975,6 +996,8 @@ private:
       nullptr,
       zero_out);
   }
+
+  const bool use_auxiliary_surface_mesh;
 
   // background mesh
   NavierStokes<dim> & navier_stokes_solver;
