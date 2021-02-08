@@ -17,6 +17,7 @@
 #define __adaflo_block_sharp_inteface_util_h
 
 
+#include <deal.II/fe/fe_nothing.h>
 #include <deal.II/fe/fe_point_evaluation.h>
 #include <deal.II/fe/fe_q_iso_q1.h>
 #include <deal.II/fe/mapping_fe_field.h>
@@ -903,15 +904,121 @@ compute_force_vector_sharp_interface(const Quadrature<dim - 1> &surface_quad,
                                      const DoFHandler<dim> &    dof_handler_dim,
                                      const BlockVectorType &    normal_vector_field,
                                      const VectorType &         curvature_solution,
+                                     const VectorType &         ls_vector,
                                      VectorType &               force_vector)
 {
-  (void)surface_quad;
-  (void)mapping;
-  (void)dof_handler;
-  (void)dof_handler_dim;
-  (void)normal_vector_field;
-  (void)curvature_solution;
-  (void)force_vector;
+  const unsigned int                        n_subdivisions = 3;
+  GridGenerator::MarchingCubeAlgorithm<dim> mc(mapping,
+                                               dof_handler.get_fe(),
+                                               n_subdivisions);
+
+  AffineConstraints<double> constraints; // TODO: use the right ones
+
+  FEPointEvaluation<1, dim> phi_curvature(mapping, dof_handler.get_fe());
+
+  FESystem<dim>               fe_dim(dof_handler.get_fe(), dim);
+  FEPointEvaluation<dim, dim> phi_normal(mapping, fe_dim);
+  FEPointEvaluation<dim, dim> phi_force(mapping, dof_handler_dim.get_fe());
+
+  std::vector<double>                  buffer;
+  std::vector<double>                  buffer_dim;
+  std::vector<types::global_dof_index> local_dof_indices;
+
+  for (const auto i : dof_handler.get_triangulation().active_cell_iterators())
+    {
+      std::vector<Point<dim>>          vertices;
+      std::vector<::CellData<dim - 1>> cells;
+      mc.process_cell(i, ls_vector, vertices, cells);
+
+      if (vertices.size() == 0)
+        continue;
+
+      std::vector<Point<dim>> points;
+      std::vector<double>     weights;
+
+      {
+        Triangulation<dim - 1, dim> tria;
+        tria.create_triangulation(vertices, cells, {});
+
+        FE_Nothing<dim - 1, dim> fe;
+        FEValues<dim - 1, dim>   fe_eval(fe,
+                                       surface_quad,
+                                       update_quadrature_points | update_JxW_values);
+
+        for (const auto &cell : tria.active_cell_iterators())
+          {
+            fe_eval.reinit(cell);
+
+            for (const auto q : fe_eval.quadrature_point_indices())
+              {
+                points.emplace_back(
+                  mapping.transform_real_to_unit_cell(i, fe_eval.quadrature_point(q)));
+                weights.emplace_back(fe_eval.JxW(q));
+              }
+          }
+      }
+
+      typename DoFHandler<dim>::active_cell_iterator cell = {
+        &dof_handler.get_triangulation(), i->level(), i->index(), &dof_handler};
+
+      typename DoFHandler<dim>::active_cell_iterator cell_dim = {
+        &dof_handler.get_triangulation(), i->level(), i->index(), &dof_handler_dim};
+
+      local_dof_indices.resize(cell->get_fe().n_dofs_per_cell());
+      buffer.resize(cell->get_fe().n_dofs_per_cell());
+      buffer_dim.resize(cell->get_fe().n_dofs_per_cell() * dim);
+
+      cell->get_dof_indices(local_dof_indices);
+
+
+      const unsigned int n_points = points.size();
+
+      const ArrayView<const Point<dim>> unit_points(points.data(), n_points);
+      const ArrayView<const double>     JxW(weights.data(), n_points);
+
+      // gather curvature
+      constraints.get_dof_values(curvature_solution,
+                                 local_dof_indices.begin(),
+                                 buffer.begin(),
+                                 buffer.end());
+
+      // evaluate curvature
+      phi_curvature.evaluate(cell,
+                             unit_points,
+                             make_array_view(buffer),
+                             EvaluationFlags::values);
+
+      // gather normal
+      for (int i = 0; i < dim; ++i)
+        {
+          constraints.get_dof_values(normal_vector_field.block(i),
+                                     local_dof_indices.begin(),
+                                     buffer.begin(),
+                                     buffer.end());
+          for (unsigned int c = 0; c < cell->get_fe().n_dofs_per_cell(); ++c)
+            buffer_dim[fe_dim.component_to_system_index(i, c)] = buffer[c];
+        }
+
+      // evaluate normal
+      phi_normal.evaluate(cell, unit_points, buffer_dim, EvaluationFlags::values);
+
+      // quadrature loop
+      for (unsigned int q = 0; q < n_points; ++q)
+        {
+          const auto normal = phi_normal.get_value(q) / phi_normal.get_value(q).norm();
+          phi_force.submit_value(normal * phi_curvature.get_value(q) * JxW[q], q);
+        }
+
+      buffer_dim.resize(dof_handler_dim.get_fe().n_dofs_per_cell());
+      local_dof_indices.resize(dof_handler_dim.get_fe().n_dofs_per_cell());
+
+      // integrate force
+      phi_force.integrate(cell, unit_points, buffer_dim, EvaluationFlags::values);
+
+      cell_dim->get_dof_indices(local_dof_indices);
+
+      constraints.distribute_local_to_global(buffer_dim, local_dof_indices, force_vector);
+    }
 }
 
 #endif

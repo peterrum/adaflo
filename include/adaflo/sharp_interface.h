@@ -935,6 +935,7 @@ private:
                                          navier_stokes_solver.get_dof_handler_u(),
                                          level_set_solver.get_normal_vector(),
                                          level_set_solver.get_curvature_vector(),
+                                         level_set_solver.get_level_set_vector(),
                                          navier_stokes_solver.user_rhs.block(0));
   }
 
