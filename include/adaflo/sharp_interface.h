@@ -223,8 +223,7 @@ public:
         data.tasks_block_size = 2;
       data.store_plain_indices = true;
 
-      const FESystem<dim> fe_dim(
-        FE_Q<dim>(QGaussLobatto<1>(parameters.velocity_degree + 1)), dim);
+      const FESystem<dim> fe_dim(FE_Q<dim>(parameters.velocity_degree), dim);
       dof_handler_dim.distribute_dofs(fe_dim);
 
       const QIterated<dim> quad(QGauss<1>(2), fe.degree);

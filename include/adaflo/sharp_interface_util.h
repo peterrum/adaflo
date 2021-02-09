@@ -108,6 +108,9 @@ namespace dealii
       const double tolerance = 1e-10;
       auto         cell_hint = background_dofhandler.get_triangulation().begin_active();
 
+      FEPointEvaluation<spacedim, spacedim> phi_velocity(background_mapping,
+                                                         background_dofhandler.get_fe());
+
       for (const auto &cell : euler_dofhandler.active_cell_iterators())
         {
           fe_eval.reinit(cell);
@@ -125,38 +128,34 @@ namespace dealii
 
               euler_coordinates_vector_bool[temp_dof_indices[q]] = 1.0;
 
-              const auto velocity = [&] {
-                const auto cell_and_reference_coordinate =
-                  GridTools::find_active_cell_around_point(cache,
-                                                           fe_eval.quadrature_point(q),
-                                                           cell_hint,
-                                                           marked_vertices,
-                                                           tolerance);
+              const auto cell_and_reference_coordinate =
+                GridTools::find_active_cell_around_point(cache,
+                                                         fe_eval.quadrature_point(q),
+                                                         cell_hint,
+                                                         marked_vertices,
+                                                         tolerance);
 
-                std::vector<double> buffer(
-                  background_dofhandler.get_fe().n_dofs_per_cell());
+              std::vector<double> buffer(
+                background_dofhandler.get_fe().n_dofs_per_cell());
 
-                typename DoFHandler<spacedim, spacedim>::active_cell_iterator
-                  background_cell{&background_dofhandler.get_triangulation(),
-                                  cell_and_reference_coordinate.first->level(),
-                                  cell_and_reference_coordinate.first->index(),
-                                  &background_dofhandler};
-                background_cell->get_dof_values(velocity_vector,
-                                                buffer.begin(),
-                                                buffer.end());
+              typename DoFHandler<spacedim, spacedim>::active_cell_iterator
+                background_cell(&background_dofhandler.get_triangulation(),
+                                cell_and_reference_coordinate.first->level(),
+                                cell_and_reference_coordinate.first->index(),
+                                &background_dofhandler);
+              background_cell->get_dof_values(velocity_vector,
+                                              buffer.begin(),
+                                              buffer.end());
 
-                const ArrayView<const Point<spacedim>> unit_points(
-                  &cell_and_reference_coordinate.second, 1);
+              const ArrayView<const Point<spacedim>> unit_points(
+                &cell_and_reference_coordinate.second, 1);
 
-                FEPointEvaluation<spacedim, spacedim> phi_velocity(
-                  background_mapping, background_dofhandler.get_fe());
-                phi_velocity.evaluate(cell_and_reference_coordinate.first,
-                                      unit_points,
-                                      buffer,
-                                      EvaluationFlags::values);
+              phi_velocity.evaluate(cell_and_reference_coordinate.first,
+                                    unit_points,
+                                    buffer,
+                                    EvaluationFlags::values);
 
-                return phi_velocity.get_value(0);
-              }();
+              const auto velocity = phi_velocity.get_value(0);
 
               const unsigned int comp =
                 euler_dofhandler.get_fe().system_to_component_index(q).first;
@@ -210,7 +209,6 @@ namespace dealii
       boost::geometry::assign_points(poly, points);
     }
 
-
     template <int dim>
     double
     within(
@@ -221,6 +219,7 @@ namespace dealii
       boost::geometry::model::d2::point_xy<double> p(point[0], point[1]);
       return boost::geometry::within(p, polygon);
     }
+
     template <int dim>
     VectorizedArray<double>
     within(
@@ -576,8 +575,8 @@ compute_force_vector_sharp_interface(
 
   for (unsigned int i = 0; i < cells.size(); ++i)
     {
-      typename DoFHandler<spacedim>::active_cell_iterator cell = {
-        &dof_handler.get_triangulation(), cells[i].first, cells[i].second, &dof_handler};
+      typename DoFHandler<spacedim>::active_cell_iterator cell(
+        &dof_handler.get_triangulation(), cells[i].first, cells[i].second, &dof_handler);
 
       const unsigned int n_dofs_per_cell = cell->get_fe().n_dofs_per_cell();
 
@@ -617,15 +616,9 @@ compute_normal(const Mapping<dim, spacedim> &   mapping,
 
   Vector<double> normal_temp;
 
-  for (const auto &cell : dof_handler_dim.get_triangulation().active_cell_iterators())
+  for (const auto &cell : dof_handler_dim.active_cell_iterators())
     {
-      TriaIterator<DoFCellAccessor<dim, spacedim, false>> dof_cell_dim(
-        &dof_handler_dim.get_triangulation(),
-        cell->level(),
-        cell->index(),
-        &dof_handler_dim);
-
-      fe_eval_dim.reinit(dof_cell_dim);
+      fe_eval_dim.reinit(cell);
 
       normal_temp.reinit(fe_eval_dim.dofs_per_cell);
       normal_temp = 0.0;
@@ -640,7 +633,7 @@ compute_normal(const Mapping<dim, spacedim> &   mapping,
           normal_temp[q] = normal[comp];
         }
 
-      dof_cell_dim->set_dof_values(normal_temp, normal_vector);
+      cell->set_dof_values(normal_temp, normal_vector);
     }
 }
 
@@ -666,23 +659,21 @@ compute_curvature(const Mapping<dim, spacedim> &   mapping,
 
   Vector<double> curvature_temp;
 
-  for (const auto &cell : dof_handler.get_triangulation().active_cell_iterators())
+  for (const auto &cell : dof_handler.active_cell_iterators())
     {
-      TriaIterator<DoFCellAccessor<dim, spacedim, false>> dof_cell(
-        &dof_handler.get_triangulation(), cell->level(), cell->index(), &dof_handler);
       TriaIterator<DoFCellAccessor<dim, spacedim, false>> dof_cell_dim(
         &dof_handler_dim.get_triangulation(),
         cell->level(),
         cell->index(),
         &dof_handler_dim);
 
-      fe_eval.reinit(dof_cell);
+      fe_eval.reinit(cell);
       fe_eval_dim.reinit(dof_cell_dim);
 
-      curvature_temp.reinit(fe_eval.dofs_per_cell);
+      curvature_temp.reinit(quadrature.size());
 
       std::vector<std::vector<Tensor<1, spacedim, double>>> normal_gradients(
-        fe_eval.dofs_per_cell, std::vector<Tensor<1, spacedim, double>>(spacedim));
+        quadrature.size(), std::vector<Tensor<1, spacedim, double>>(spacedim));
 
       fe_eval_dim.get_function_gradients(normal_vector, normal_gradients);
 
@@ -696,7 +687,7 @@ compute_curvature(const Mapping<dim, spacedim> &   mapping,
           curvature_temp[q] = curvature;
         }
 
-      dof_cell->set_dof_values(curvature_temp, curvature_vector);
+      cell->set_dof_values(curvature_temp, curvature_vector);
     }
 }
 
