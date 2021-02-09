@@ -48,7 +48,7 @@ namespace dealii
     template <int dim, int spacedim, typename VectorType>
     void
     get_position_vector(const DoFHandler<dim, spacedim> &dof_handler_dim,
-                        VectorType &                     euler_vector,
+                        VectorType &                     euler_coordinates_vector,
                         const Mapping<dim, spacedim> &   mapping)
     {
       FEValues<dim, spacedim> fe_eval(
@@ -75,7 +75,7 @@ namespace dealii
               temp[q] = point[comp];
             }
 
-          cell->set_dof_values(temp, euler_vector);
+          cell->set_dof_values(temp, euler_coordinates_vector);
         }
     }
 
@@ -87,7 +87,7 @@ namespace dealii
                            const VectorType &                    velocity_vector,
                            const DoFHandler<dim, spacedim> &     euler_dofhandler,
                            const Mapping<dim, spacedim> &        euler_mapping,
-                           VectorType &                          euler_vector)
+                           VectorType &                          euler_coordinates_vector)
     {
       FEValues<dim, spacedim> fe_eval(
         euler_mapping,
@@ -98,9 +98,9 @@ namespace dealii
       Vector<double>                       temp;
       std::vector<types::global_dof_index> temp_dof_indices;
 
-      auto euler_vector_temp = euler_vector;
-      auto euler_vector_bool = euler_vector;
-      euler_vector_bool      = 0.0;
+      auto euler_coordinates_vector_temp = euler_coordinates_vector;
+      auto euler_coordinates_vector_bool = euler_coordinates_vector;
+      euler_coordinates_vector_bool      = 0.0;
 
       const std::vector<bool>                    marked_vertices;
       const GridTools::Cache<spacedim, spacedim> cache(
@@ -116,14 +116,14 @@ namespace dealii
           temp_dof_indices.resize(fe_eval.dofs_per_cell);
 
           cell->get_dof_indices(temp_dof_indices);
-          cell->get_dof_values(euler_vector, temp);
+          cell->get_dof_values(euler_coordinates_vector, temp);
 
           for (const auto q : fe_eval.quadrature_point_indices())
             {
-              // if (euler_vector_bool[temp_dof_indices[q]] == 1.0)
+              // if (euler_coordinates_vector_bool[temp_dof_indices[q]] == 1.0)
               //  continue;
 
-              euler_vector_bool[temp_dof_indices[q]] = 1.0;
+              euler_coordinates_vector_bool[temp_dof_indices[q]] = 1.0;
 
               const auto velocity = [&] {
                 const auto cell_and_reference_coordinate =
@@ -165,10 +165,10 @@ namespace dealii
               temp[q] = fe_eval.quadrature_point(q)[comp] + dt * velocity[comp];
             }
 
-          cell->set_dof_values(temp, euler_vector_temp);
+          cell->set_dof_values(temp, euler_coordinates_vector_temp);
         }
 
-      euler_vector = euler_vector_temp;
+      euler_coordinates_vector = euler_coordinates_vector_temp;
     }
   } // namespace VectorTools
 
@@ -880,6 +880,7 @@ compute_force_vector_sharp_interface(const Triangulation<dim - 1, dim> &surface_
       // quadrature loop
       for (unsigned int q = 0; q < n_points; ++q)
         {
+          Assert(phi_normal.get_value(q).norm() > 0, ExcNotImplemented());
           const auto normal = phi_normal.get_value(q) / phi_normal.get_value(q).norm();
           phi_force.submit_value(normal * phi_curvature.get_value(q) * JxW[q], q);
         }
@@ -1020,6 +1021,7 @@ compute_force_vector_sharp_interface(const Quadrature<dim - 1> &surface_quad,
       // quadrature loop
       for (unsigned int q = 0; q < n_points; ++q)
         {
+          Assert(phi_normal.get_value(q).norm() > 0, ExcNotImplemented());
           const auto normal = phi_normal.get_value(q) / phi_normal.get_value(q).norm();
           phi_force.submit_value(normal * phi_curvature.get_value(q) * JxW[q], q);
         }

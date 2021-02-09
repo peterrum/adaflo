@@ -205,7 +205,6 @@ public:
 
     // MatrixFree
     {
-      // @todo: or use FE_Q_iso_Q1?
       const FE_Q_iso_Q1<dim> fe(parameters.concentration_subdivisions);
       dof_handler.distribute_dofs(fe);
 
@@ -228,11 +227,9 @@ public:
         FE_Q<dim>(QGaussLobatto<1>(parameters.velocity_degree + 1)), dim);
       dof_handler_dim.distribute_dofs(fe_dim);
 
-      // @todo: or use QIterated?
       const QIterated<dim> quad(QGauss<1>(2), fe.degree);
       const QGauss<dim>    quad_vel(parameters.velocity_degree + 1);
 
-      // @todo: fill constraints
       for (const auto &i : fluid_type)
         VectorTools::interpolate_boundary_values(mapping,
                                                  dof_handler,
@@ -261,20 +258,18 @@ public:
 
     // Vectors
     {
-      matrix_free.initialize_dof_vector(ls_solution, dof_index_ls);
-      matrix_free.initialize_dof_vector(ls_solution_old, dof_index_ls);
-      matrix_free.initialize_dof_vector(ls_solution_old_old, dof_index_ls);
-      matrix_free.initialize_dof_vector(ls_update, dof_index_ls);
-      matrix_free.initialize_dof_vector(ls_rhs, dof_index_ls);
-
-      matrix_free.initialize_dof_vector(curvature_solution, dof_index_curvature);
-      matrix_free.initialize_dof_vector(curvature_rhs, dof_index_curvature);
+      initialize_dof_vector(ls_solution, dof_index_ls);
+      initialize_dof_vector(ls_solution_old, dof_index_ls);
+      initialize_dof_vector(ls_solution_old_old, dof_index_ls);
+      initialize_dof_vector(ls_update, dof_index_ls);
+      initialize_dof_vector(ls_rhs, dof_index_ls);
+      initialize_dof_vector(curvature_solution, dof_index_curvature);
+      initialize_dof_vector(curvature_rhs, dof_index_curvature);
 
       for (unsigned int i = 0; i < dim; ++i)
         {
-          matrix_free.initialize_dof_vector(normal_vector_field.block(i),
-                                            dof_index_normal);
-          matrix_free.initialize_dof_vector(normal_vector_rhs.block(i), dof_index_normal);
+          initialize_dof_vector(normal_vector_field.block(i), dof_index_normal);
+          initialize_dof_vector(normal_vector_rhs.block(i), dof_index_normal);
         }
     }
 
@@ -493,25 +488,24 @@ public:
   FrontTrackingSolver(NavierStokes<dim> &          navier_stokes_solver,
                       Triangulation<dim - 1, dim> &surface_mesh)
     : navier_stokes_solver(navier_stokes_solver)
-    , euler_dofhandler(surface_mesh)
+    , surface_dofhandler_dim(surface_mesh)
     , surface_dofhandler(surface_mesh)
   {
     const unsigned int fe_degree      = 3;
     const unsigned int mapping_degree = fe_degree;
 
     FESystem<dim - 1, dim> euler_fe(FE_Q<dim - 1, dim>(fe_degree), dim);
-    euler_dofhandler.distribute_dofs(euler_fe);
+    surface_dofhandler_dim.distribute_dofs(euler_fe);
 
     surface_dofhandler.distribute_dofs(FE_Q<dim - 1, dim>(fe_degree));
 
-    euler_vector.reinit(euler_dofhandler.n_dofs());
-    VectorTools::get_position_vector(euler_dofhandler,
-                                     euler_vector,
+    surface_coordinates_vector.reinit(surface_dofhandler_dim.n_dofs());
+    VectorTools::get_position_vector(surface_dofhandler_dim,
+                                     surface_coordinates_vector,
                                      MappingQGeneric<dim - 1, dim>(mapping_degree));
 
-    euler_mapping =
-      std::make_shared<MappingFEField<dim - 1, dim, VectorType>>(euler_dofhandler,
-                                                                 euler_vector);
+    euler_mapping = std::make_shared<MappingFEField<dim - 1, dim, VectorType>>(
+      surface_dofhandler_dim, surface_coordinates_vector);
 
     this->update_phases();
     this->update_gravity_force();
@@ -581,11 +575,11 @@ public:
       DataOut<dim - 1, DoFHandler<dim - 1, dim>> data_out;
       data_out.set_flags(flags);
       data_out.add_data_vector(surface_dofhandler, curvature_vector, "curvature");
-      data_out.add_data_vector(euler_dofhandler, normal_vector, "normal");
+      data_out.add_data_vector(surface_dofhandler_dim, normal_vector, "normal");
 
       data_out.build_patches(
         *euler_mapping,
-        euler_dofhandler.get_fe().degree + 1,
+        surface_dofhandler_dim.get_fe().degree + 1,
         DataOut<dim - 1, DoFHandler<dim - 1, dim>>::CurvedCellRegion::curved_inner_cells);
 
       std::filesystem::path path(output_filename + "_surface");
@@ -605,9 +599,9 @@ private:
                                         navier_stokes_solver.get_dof_handler_u(),
                                         navier_stokes_solver.mapping,
                                         navier_stokes_solver.solution.block(0),
-                                        euler_dofhandler,
+                                        surface_dofhandler_dim,
                                         *euler_mapping,
-                                        euler_vector);
+                                        surface_coordinates_vector);
   }
 
   void
@@ -622,7 +616,7 @@ private:
       return; // nothing to do
 
     boost::geometry::model::polygon<boost::geometry::model::d2::point_xy<double>> polygon;
-    GridTools::construct_polygon(*euler_mapping, euler_dofhandler, polygon);
+    GridTools::construct_polygon(*euler_mapping, surface_dofhandler_dim, polygon);
 
     double dummy;
 
@@ -655,12 +649,12 @@ private:
   {
     // return; // TODO: not working
 
-    normal_vector.reinit(euler_dofhandler.n_dofs());
+    normal_vector.reinit(surface_dofhandler_dim.n_dofs());
     curvature_vector.reinit(surface_dofhandler.n_dofs());
 
-    compute_normal(*euler_mapping, euler_dofhandler, normal_vector);
+    compute_normal(*euler_mapping, surface_dofhandler_dim, normal_vector);
     compute_curvature(*euler_mapping,
-                      euler_dofhandler,
+                      surface_dofhandler_dim,
                       surface_dofhandler,
                       QGaussLobatto<dim - 1>(surface_dofhandler.get_fe().degree + 1),
                       normal_vector,
@@ -669,8 +663,8 @@ private:
     compute_force_vector_sharp_interface(
       *euler_mapping,
       surface_dofhandler,
-      euler_dofhandler,
-      QGauss<dim - 1>(euler_dofhandler.get_fe().degree + 1),
+      surface_dofhandler_dim,
+      QGauss<dim - 1>(surface_dofhandler_dim.get_fe().degree + 1),
       navier_stokes_solver.mapping,
       navier_stokes_solver.get_dof_handler_u(),
       navier_stokes_solver.get_parameters().surface_tension,
@@ -720,9 +714,9 @@ private:
   NavierStokes<dim> &navier_stokes_solver;
 
   // surface mesh
-  DoFHandler<dim - 1, dim>               euler_dofhandler;
+  DoFHandler<dim - 1, dim>               surface_dofhandler_dim;
   DoFHandler<dim - 1, dim>               surface_dofhandler;
-  VectorType                             euler_vector;
+  VectorType                             surface_coordinates_vector;
   std::shared_ptr<Mapping<dim - 1, dim>> euler_mapping;
 
   VectorType normal_vector;
@@ -760,9 +754,8 @@ public:
     euler_dofhandler.distribute_dofs(surface_fe_dim);
 
     euler_vector.reinit(euler_dofhandler.n_dofs());
-    VectorTools::get_position_vector(euler_dofhandler,
-                                     euler_vector,
-                                     MappingQGeneric<dim - 1, dim>(4));
+    VectorTools::
+      get_position_vector(euler_dofhandler, euler_vector, MappingQGeneric<dim - 1, dim>(4 /*TODO: this is a high number to well represent curved surfaces, the actual values is not that relevant*/));
     euler_mapping =
       std::make_shared<MappingFEField<dim - 1, dim, VectorType>>(euler_dofhandler,
                                                                  euler_vector);
