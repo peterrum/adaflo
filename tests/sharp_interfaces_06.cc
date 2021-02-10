@@ -137,7 +137,7 @@ MicroFluidicProblem<dim>::run()
     solver = std::make_unique<MixedLevelSetSolver<dim>>(navier_stokes_solver,
                                                         surface_mesh,
                                                         InitialValuesLS<dim>());
-  else if (parameters.solver_method == "level set sharp")
+  else if (parameters.solver_method == "sharp level set")
     solver = std::make_unique<MixedLevelSetSolver<dim>>(navier_stokes_solver,
                                                         InitialValuesLS<dim>());
   else if (parameters.solver_method == "level set")
