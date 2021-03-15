@@ -954,7 +954,7 @@ compute_force_vector_sharp_interface(const Quadrature<dim - 1> &surface_quad,
   FEPointEvaluation<dim, dim> phi_normal(mapping, fe_dim);
   FEPointEvaluation<dim, dim> phi_force(mapping, dof_handler_dim.get_fe());
   //to save the projected values of the ls in it
-  FEPointEvaluation<1, dim> pre_val(mapping, dof_handler_dim.get_fe());
+  FEPointEvaluation<1, dim> pre_val(mapping, dof_handler.get_fe());
 
 
   std::vector<double>                  buffer;
@@ -965,8 +965,8 @@ compute_force_vector_sharp_interface(const Quadrature<dim - 1> &surface_quad,
 
   //interpolation to pressure space
   //TODO:size!
-  FullMatrix<double> interpolation_concentration_pressure(navier_stokes_getfep.dofs_per_cell(), dof_handler.get_fe().dofs_per_cell());navier_stokes_getfep.dofs_per_cell(), dof_handler.get_fe().dofs_per_cell());
-  interpolation_concentration_pressure.reinit(navier_stokes_getfep.dofs_per_cell(), dof_handler.get_fe().dofs_per_cell());
+  FullMatrix<double> interpolation_concentration_pressure(navier_stokes_getfep.n_dofs_per_cell(), dof_handler.get_fe().n_dofs_per_cell());
+  interpolation_concentration_pressure.reinit(navier_stokes_getfep.n_dofs_per_cell(), dof_handler.get_fe().n_dofs_per_cell());
   if(params.interpolate_grad_onto_pressure)
    {
       const FE_Q_iso_Q1<dim> &fe_mine =
@@ -1098,9 +1098,7 @@ compute_force_vector_sharp_interface(const Quadrature<dim - 1> &surface_quad,
       // interpolate ls values onto pressure (from level_set_okz.cc)
       if (params.interpolate_grad_onto_pressure)
         {
-          pcout << "   ns dofs:" << navier_stokes_getfep.dofs_per_cell() << " cell dofs: " << cell->get_fe().dofs_per_cell() << std::endl;
-         // pcout << "\n   ns dofs:" << navier_stokes_getfep.n_dofs_per_cell() << " cell ndofs: " << cell->get_fe().n_dofs_per_cell() << std::endl;
-          pcout << "\n  dof handler_dofs: " << dof_handler.get_fe().dofs_per_cell() << "  dof handler dim dofs: " << dof_handler_dim.get_fe().dofs_per_cell() << std::endl;
+         //pcout << "\n   ns dofs:" << navier_stokes_getfep.n_dofs_per_cell() << " cell ndofs: " << cell->get_fe().n_dofs_per_cell() << std::endl;
          // pcout << "\n  dof handler_n_dofs: " << dof_handler.get_fe().n_dofs_per_cell() << "  dof handler dim ndofs: " << dof_handler_dim.get_fe().n_dofs_per_cell() << std::endl;
           
           for (unsigned int i = 0; i < navier_stokes_getfep.n_dofs_per_cell(); ++i)
@@ -1111,6 +1109,8 @@ compute_force_vector_sharp_interface(const Quadrature<dim - 1> &surface_quad,
               // TODO: get the interpolation_concentration_pressure from level_set_base
                 projected_value += interpolation_concentration_pressure(i, c) *
                                    buffer_2[c];
+              
+              buffer_1[i] = projected_value;
             }
            //evaluate projected values 
           pre_val.evaluate(cell, unit_points, make_array_view(buffer_2), EvaluationFlags::gradients);
