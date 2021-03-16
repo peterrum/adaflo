@@ -311,8 +311,8 @@ public:
     // transform_distance_function
     for (unsigned int i = 0; i < ls_solution.local_size(); i++)
       ls_solution.local_element(i) =
-         -std::tanh(ls_solution.local_element(i) / (2.*0.01));
-        // -std::tanh(ls_solution.local_element(i) / (2. * epsilon_used));
+         //-std::tanh(ls_solution.local_element(i) / (2.*0.01));
+         -std::tanh(ls_solution.local_element(i) / (2. * epsilon_used));
 
     reinitialize(true);
 
@@ -974,9 +974,7 @@ private:
                                            level_set_solver.get_curvature_vector(),
                                            level_set_solver.get_level_set_vector(),
                                            navier_stokes_solver.user_rhs.block(0),
-                                           navier_stokes_solver.get_parameters(),
-                                           navier_stokes_solver.get_fe_p(),
-                                           level_set_solver.pcout); 
+                                           navier_stokes_solver.get_parameters()); 
     // level set
     else if (!use_auxiliary_surface_mesh && !use_sharp_interface)
       compute_force_vector_regularized(level_set_solver.get_matrix_free(),

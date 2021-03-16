@@ -937,9 +937,7 @@ compute_force_vector_sharp_interface(const Quadrature<dim - 1> &surface_quad,
                                      const VectorType &         curvature_solution,
                                      const VectorType &         ls_vector,
                                      VectorType &               force_vector,
-                                     const FlowParameters &     params,
-                                     const FiniteElement<dim> & navier_stokes_getfep,
-                                     ConditionalOStream  &      pcout)
+                                     const FlowParameters &     params)
                                      
                                      
 {
