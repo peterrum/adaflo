@@ -954,7 +954,7 @@ compute_force_vector_sharp_interface(const Quadrature<dim - 1> &surface_quad,
   FEPointEvaluation<dim, dim> phi_normal(mapping, fe_dim);
   FEPointEvaluation<dim, dim> phi_force(mapping, dof_handler_dim.get_fe());
   //to save the projected values of the ls in it
-  FEPointEvaluation<1, dim> pre_val(mapping, dof_handler.get_fe());
+  FEPointEvaluation<1, dim> pre_val(mapping, navier_stokes_getfep);
 
 
   std::vector<double>                  buffer;
@@ -964,7 +964,6 @@ compute_force_vector_sharp_interface(const Quadrature<dim - 1> &surface_quad,
   std::vector<types::global_dof_index> local_dof_indices;
 
   //interpolation to pressure space
-  //TODO:size!
   FullMatrix<double> interpolation_concentration_pressure(navier_stokes_getfep.n_dofs_per_cell(), dof_handler.get_fe().n_dofs_per_cell());
   interpolation_concentration_pressure.reinit(navier_stokes_getfep.n_dofs_per_cell(), dof_handler.get_fe().n_dofs_per_cell());
   if(params.interpolate_grad_onto_pressure)
@@ -975,6 +974,7 @@ compute_force_vector_sharp_interface(const Quadrature<dim - 1> &surface_quad,
         fe_mine.get_poly_space_numbering_inverse();
       if (const FE_Q<dim> *fe_p = dynamic_cast<const FE_Q<dim> *>(&navier_stokes_getfep))
         {
+          pcout << "first if" << std::endl;
           const std::vector<unsigned int> lexicographic_p =
             fe_p->get_poly_space_numbering_inverse();
           for (unsigned int j = 0; j < fe_p->dofs_per_cell; ++j)
@@ -984,10 +984,12 @@ compute_force_vector_sharp_interface(const Quadrature<dim - 1> &surface_quad,
                 interpolation_concentration_pressure(j, i) =
                   dof_handler.get_fe().shape_value(lexicographic_ls[i], p);
             }
+            pcout << "j = " << fe_p->dofs_per_cell << " and i = " << fe_mine.dofs_per_cell << std::endl;
         }
       else if (const FE_Q_DG0<dim> *fe_p =
                   dynamic_cast<const FE_Q_DG0<dim> *>(&navier_stokes_getfep))
         {
+          pcout << "first else if" << std::endl;
           const std::vector<unsigned int> lexicographic_p =
             fe_p->get_poly_space_numbering_inverse();
           for (unsigned int j = 0; j < fe_p->dofs_per_cell - 1; ++j)
@@ -997,6 +999,7 @@ compute_force_vector_sharp_interface(const Quadrature<dim - 1> &surface_quad,
                 interpolation_concentration_pressure(j, i) =
                   dof_handler.get_fe().shape_value(lexicographic_ls[i], p);
             }
+          pcout << "j = " << fe_p->dofs_per_cell << " and i = " << fe_mine.dofs_per_cell << std::endl;
         }
     }
 
@@ -1057,7 +1060,7 @@ compute_force_vector_sharp_interface(const Quadrature<dim - 1> &surface_quad,
       local_dof_indices.resize(cell->get_fe().n_dofs_per_cell());
       buffer.resize(cell->get_fe().n_dofs_per_cell());
       //TODO: resize how big?
-      buffer_1.resize(cell->get_fe().n_dofs_per_cell());
+      buffer_1.resize(navier_stokes_getfep.n_dofs_per_cell());
       buffer_2.resize(cell->get_fe().n_dofs_per_cell());
       buffer_dim.resize(cell->get_fe().n_dofs_per_cell() * dim);
 
@@ -1094,39 +1097,53 @@ compute_force_vector_sharp_interface(const Quadrature<dim - 1> &surface_quad,
       // evaluate normal
       phi_normal.evaluate(cell, unit_points, buffer_dim, EvaluationFlags::values);
 
+      // gather phi
+      constraints.get_dof_values(ls_vector,
+                                 local_dof_indices.begin(),
+                                 buffer_2.begin(),
+                                 buffer_2.end());
 
       // interpolate ls values onto pressure (from level_set_okz.cc)
       if (params.interpolate_grad_onto_pressure)
         {
          //pcout << "\n   ns dofs:" << navier_stokes_getfep.n_dofs_per_cell() << " cell ndofs: " << cell->get_fe().n_dofs_per_cell() << std::endl;
-         // pcout << "\n  dof handler_n_dofs: " << dof_handler.get_fe().n_dofs_per_cell() << "  dof handler dim ndofs: " << dof_handler_dim.get_fe().n_dofs_per_cell() << std::endl;
+         //pcout << "\n  dof handler_n_dofs: " << dof_handler.get_fe().n_dofs_per_cell() << "  dof handler dim ndofs: " << dof_handler_dim.get_fe().n_dofs_per_cell() << std::endl;
           
           for (unsigned int i = 0; i < navier_stokes_getfep.n_dofs_per_cell(); ++i)
             {
               double projected_value = 0.0;
               //TODO: length of for loop?
-              for (unsigned int c = 0; c < dof_handler.get_fe().n_dofs_per_cell(); ++c)
+              for (unsigned int c = 0; c < dof_handler.get_fe().n_dofs_per_cell(); ++c){
               // TODO: get the interpolation_concentration_pressure from level_set_base
                 projected_value += interpolation_concentration_pressure(i, c) *
                                    buffer_2[c];
+                //pcout << "c = " << c << " th. buffer_2 = " << buffer_2[c] << " projected_value = " << projected_value << std::endl;
+              }
               
               buffer_1[i] = projected_value;
+              pcout << "i = " << i << " th. buffer_1 = " << buffer_1[i] << std::endl;
             }
            //evaluate projected values 
-          pre_val.evaluate(cell, unit_points, make_array_view(buffer_2), EvaluationFlags::gradients);
-        }
-        else{
           pre_val.evaluate(cell, unit_points, make_array_view(buffer_1), EvaluationFlags::gradients);
         }
+        else{
+         // pre_val.evaluate(cell, unit_points, make_array_view(buffer_2), EvaluationFlags::gradients);
+        }
+        pcout << "n_points" << n_points << std::endl;
       
       // quadrature loop
       for (unsigned int q = 0; q < n_points; ++q)
         {
           Assert(phi_normal.get_value(q).norm() > 0, ExcNotImplemented());
+         // if(params.interpolate_grad_onto_pressure)
+              pcout << "phi normal values = " << phi_normal.get_value(q) << "  phi normal norm =  " << phi_normal.get_value(q).norm() 
+                  << "pre val grad = " << pre_val.get_gradient(q) << "  pre val grad norm =  " << pre_val.get_gradient(q).norm() << std::endl;
+              //Assert(pre_val.get_gradient(q).norm() > 0, ExcNotImplemented());
           //const auto normal = phi_normal.get_value(q) / phi_normal.get_value(q).norm();
           const auto normal = (params.interpolate_grad_onto_pressure ?
-               pre_val.get_gradient(q) :
+               pre_val.get_gradient(q) / pre_val.get_gradient(q).norm() :
                phi_normal.get_value(q) / phi_normal.get_value(q).norm());
+               
           phi_force.submit_value(params.surface_tension *normal * phi_curvature.get_value(q) * JxW[q], q);
         }
 
