@@ -959,17 +959,17 @@ private:
   update_surface_tension()
   {
     if (use_auxiliary_surface_mesh && use_sharp_interface)
-      compute_force_vector_sharp_interface<dim>(euler_dofhandler.get_triangulation(),
-                                                *euler_mapping,
-                                                euler_dofhandler.get_fe().base_element(0),
-                                                QGauss<dim - 1>(
-                                                  euler_dofhandler.get_fe().degree + 1),
-                                                navier_stokes_solver.mapping,
-                                                level_set_solver.get_dof_handler(),
-                                                navier_stokes_solver.get_dof_handler_u(),
-                                                level_set_solver.get_normal_vector(),
-                                                level_set_solver.get_curvature_vector(),
-                                                navier_stokes_solver.user_rhs.block(0));
+      compute_force_vector_sharp_interface(euler_dofhandler.get_triangulation(),
+                                           *euler_mapping,
+                                           QGauss<dim - 1>(
+                                             euler_dofhandler.get_fe().degree + 1),
+                                           navier_stokes_solver.mapping,
+                                           level_set_solver.get_dof_handler(),
+                                           navier_stokes_solver.get_dof_handler_u(),
+                                           1.0 /*TODO*/,
+                                           level_set_solver.get_normal_vector(),
+                                           level_set_solver.get_curvature_vector(),
+                                           navier_stokes_solver.user_rhs.block(0));
     else if (!use_auxiliary_surface_mesh && use_sharp_interface)
       compute_force_vector_sharp_interface(QGauss<dim - 1>(2 /*TODO*/),
                                            navier_stokes_solver.mapping,
