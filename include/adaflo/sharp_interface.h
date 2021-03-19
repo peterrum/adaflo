@@ -505,9 +505,11 @@ public:
     surface_dofhandler.distribute_dofs(FE_Q<dim - 1, dim>(fe_degree));
 
     surface_coordinates_vector.reinit(surface_dofhandler_dim.n_dofs());
-    VectorTools::get_position_vector(surface_dofhandler_dim,
-                                     surface_coordinates_vector,
-                                     MappingQGeneric<dim - 1, dim>(mapping_degree));
+    surface_coordinates_vector.update_ghost_values();
+    VectorTools::get_position_vector(MappingQGeneric<dim - 1, dim>(mapping_degree),
+                                     surface_dofhandler_dim,
+                                     surface_coordinates_vector);
+    surface_coordinates_vector.zero_out_ghost_values();
 
     euler_mapping = std::make_shared<MappingFEField<dim - 1, dim, VectorType>>(
       surface_dofhandler_dim, surface_coordinates_vector);
@@ -759,8 +761,10 @@ public:
     euler_dofhandler.distribute_dofs(surface_fe_dim);
 
     euler_vector.reinit(euler_dofhandler.n_dofs());
+    euler_vector.update_ghost_values();
     VectorTools::
-      get_position_vector(euler_dofhandler, euler_vector, MappingQGeneric<dim - 1, dim>(4 /*TODO: this is a high number to well represent curved surfaces, the actual values is not that relevant*/));
+      get_position_vector(MappingQGeneric<dim - 1, dim>(4 /*TODO: this is a high number to well represent curved surfaces, the actual values is not that relevant*/), euler_dofhandler, euler_vector);
+    euler_vector.zero_out_ghost_values();
     euler_mapping =
       std::make_shared<MappingFEField<dim - 1, dim, VectorType>>(euler_dofhandler,
                                                                  euler_vector);
