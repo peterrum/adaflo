@@ -931,15 +931,16 @@ compute_force_vector_sharp_interface(const Triangulation<dim, spacedim> &surface
 
         // gather_evaluate normal
         {
-          local_dof_indices_dim.resize(cell_dim->get_fe().n_dofs_per_cell());
-          buffer_dim.resize(cell_dim->get_fe().n_dofs_per_cell());
-
-          cell_dim->get_dof_indices(local_dof_indices_dim);
-
-          constraints.get_dof_values(normal_solution,
-                                     local_dof_indices_dim.begin(),
-                                     buffer_dim.begin(),
-                                     buffer_dim.end());
+          for (int i = 0; i < dim; ++i)
+            {
+              constraints.get_dof_values(normal_solution.block(i),
+                                         local_dof_indices.begin(),
+                                         buffer.begin(),
+                                         buffer.end());
+              for (unsigned int c = 0; c < cell->get_fe().n_dofs_per_cell(); ++c)
+                buffer_dim[dof_handler_dim.get_fe().component_to_system_index(i, c)] =
+                  buffer[c];
+            }
 
           phi_normal.evaluate(cell_dim,
                               unit_points,
@@ -966,7 +967,14 @@ compute_force_vector_sharp_interface(const Triangulation<dim, spacedim> &surface
 
   std::vector<T> buffer;
 
+  normal_solution.update_ghost_values();
+  curvature_solution.update_ghost_values();
+
   eval.template process_and_evaluate<T>(integration_values, buffer, fu);
+
+  normal_solution.update_ghost_values();
+  curvature_solution.update_ghost_values();
+  force_vector.compress(VectorOperation::values::add);
 }
 
 

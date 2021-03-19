@@ -124,7 +124,7 @@ MicroFluidicProblem<dim>::run()
   navier_stokes_solver.setup_problem(Functions::ZeroFunction<dim>(dim));
   navier_stokes_solver.output_solution(parameters.output_filename);
 
-  Triangulation<dim - 1, dim> surface_mesh;
+  parallel::shared::Triangulation<dim - 1, dim> surface_mesh(mpi_communicator);
   GridGenerator::hyper_sphere(surface_mesh, Point<dim>(0.02, 0.03), 0.5);
   surface_mesh.refine_global(5);
 
