@@ -131,8 +131,11 @@ MicroFluidicProblem<dim>::run()
   std::unique_ptr<SharpInterfaceSolver> solver;
 
   if (parameters.solver_method == "front tracking")
-    solver =
-      std::make_unique<FrontTrackingSolver<dim>>(navier_stokes_solver, surface_mesh);
+    {
+      AssertDimension(Utilities::MPI::n_mpi_processes(mpi_communicator), 1);
+      solver =
+        std::make_unique<FrontTrackingSolver<dim>>(navier_stokes_solver, surface_mesh);
+    }
   else if (parameters.solver_method == "mixed level set")
     solver = std::make_unique<MixedLevelSetSolver<dim>>(navier_stokes_solver,
                                                         surface_mesh,
