@@ -384,7 +384,13 @@ private:
   void
   advance_concentration()
   {
+    velocity_solution.update_ghost_values();
+    velocity_solution_old.update_ghost_values();
+    velocity_solution_old_old.update_ghost_values();
     advection_operator->advance_concentration(this->time_stepping.step_size());
+    velocity_solution.zero_out_ghost_values();
+    velocity_solution_old.zero_out_ghost_values();
+    velocity_solution_old_old.zero_out_ghost_values();
   }
 
   void
@@ -819,6 +825,10 @@ public:
           dim, DataComponentInterpretation::component_is_part_of_vector);
 
       navier_stokes_solver.solution.update_ghost_values();
+      navier_stokes_solver.user_rhs.update_ghost_values();
+      level_set_solver.get_level_set_vector().update_ghost_values();
+      level_set_solver.get_curvature_vector().update_ghost_values();
+      level_set_solver.get_normal_vector().update_ghost_values();
 
       data_out.add_data_vector(navier_stokes_solver.get_dof_handler_u(),
                                navier_stokes_solver.solution.block(0),
@@ -850,6 +860,12 @@ public:
       data_out.build_patches(navier_stokes_solver.mapping,
                              navier_stokes_solver.get_dof_handler_u().get_fe().degree +
                                1);
+
+      navier_stokes_solver.solution.zero_out_ghost_values();
+      navier_stokes_solver.user_rhs.zero_out_ghost_values();
+      level_set_solver.get_level_set_vector().zero_out_ghost_values();
+      level_set_solver.get_curvature_vector().zero_out_ghost_values();
+      level_set_solver.get_normal_vector().zero_out_ghost_values();
 
       navier_stokes_solver.write_data_output(
         output_filename,
