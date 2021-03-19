@@ -884,14 +884,13 @@ compute_force_vector_sharp_interface(const Triangulation<dim, spacedim> &surface
 
     FEPointEvaluation<1, spacedim> phi_curvature(mapping, dof_handler.get_fe());
 
-    FESystem<spacedim>                    fe_dim(dof_handler.get_fe(), dim);
+    FESystem<spacedim>                    fe_dim(dof_handler.get_fe(), spacedim);
     FEPointEvaluation<spacedim, spacedim> phi_normal(mapping, fe_dim);
     FEPointEvaluation<spacedim, spacedim> phi_force(mapping, dof_handler_dim.get_fe());
 
     std::vector<double>                  buffer;
     std::vector<double>                  buffer_dim;
     std::vector<types::global_dof_index> local_dof_indices;
-    std::vector<types::global_dof_index> local_dof_indices_dim;
 
     for (unsigned int i = 0; i < cell_data.cells.size(); ++i)
       {
@@ -936,7 +935,7 @@ compute_force_vector_sharp_interface(const Triangulation<dim, spacedim> &surface
         // gather_evaluate normal
         {
           buffer_dim.resize(fe_dim.n_dofs_per_cell());
-          for (int i = 0; i < dim; ++i)
+          for (int i = 0; i < spacedim; ++i)
             {
               constraints.get_dof_values(normal_solution.block(i),
                                          local_dof_indices.begin(),
@@ -954,9 +953,13 @@ compute_force_vector_sharp_interface(const Triangulation<dim, spacedim> &surface
 
         // perform operation on quadrature points
         for (unsigned int q = 0; q < unit_points.size(); ++q)
-          phi_force.submit_value(surface_tension * phi_normal.get_value(q) *
-                                   phi_curvature.get_value(q) * JxW[q],
-                                 q);
+          {
+            Assert(phi_normal.get_value(q).norm() > 0, ExcNotImplemented());
+            const auto normal = phi_normal.get_value(q) / phi_normal.get_value(q).norm();
+            phi_force.submit_value(surface_tension * normal * phi_curvature.get_value(q) *
+                                     JxW[q],
+                                   q);
+          }
 
         // integrate_scatter force
         {
