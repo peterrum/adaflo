@@ -61,7 +61,8 @@ namespace dealii
       FEValues<dim, spacedim> fe_eval(
         euler_mapping,
         euler_dofhandler.get_fe(),
-        Quadrature<dim>(euler_dofhandler.get_fe().get_unit_support_points()),
+        Quadrature<dim>(
+          euler_dofhandler.get_fe().base_element(0).get_unit_support_points()),
         update_quadrature_points);
 
       Vector<double>                       temp;
@@ -106,11 +107,12 @@ namespace dealii
             {
               const auto velocity = evaluation_values[counter++];
 
-              const unsigned int comp =
-                euler_dofhandler.get_fe().system_to_component_index(q).first;
-
-              // temp[q] += dt * velocity[comp];
-              temp[q] = fe_eval.quadrature_point(q)[comp] + dt * velocity[comp];
+              for (unsigned int comp = 0; comp < spacedim; ++comp)
+                {
+                  const auto i =
+                    euler_dofhandler.get_fe().component_to_system_index(comp, q);
+                  temp[i] = fe_eval.quadrature_point(q)[comp] + dt * velocity[comp];
+                }
             }
 
           cell->set_dof_values(temp, euler_coordinates_vector_temp);
