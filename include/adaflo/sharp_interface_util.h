@@ -941,9 +941,16 @@ compute_force_vector_sharp_interface(const Quadrature<dim - 1> &surface_quad,
   std::vector<double>                  buffer_dim;
   std::vector<types::global_dof_index> local_dof_indices;
 
+  normal_vector_field.update_ghost_values();
+  curvature_solution.update_ghost_values();
+  ls_vector.update_ghost_values();
+
   // loop over all cells
   for (const auto &cell : dof_handler.active_cell_iterators())
     {
+      if (cell->is_locally_owned() == false)
+        continue;
+
       // determine if cell is cut by the interface and if yes, determine the quadrature
       // point location and weight
       const auto [points, weights] =
@@ -1050,6 +1057,11 @@ compute_force_vector_sharp_interface(const Quadrature<dim - 1> &surface_quad,
 
       constraints.distribute_local_to_global(buffer_dim, local_dof_indices, force_vector);
     }
+
+  normal_vector_field.zero_out_ghost_values();
+  curvature_solution.zero_out_ghost_values();
+  ls_vector.zero_out_ghost_values();
+  force_vector.compress(VectorOperation::values::add);
 }
 
 
