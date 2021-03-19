@@ -113,6 +113,8 @@ namespace dealii
       FEPointEvaluation<spacedim, spacedim> phi_velocity(background_mapping,
                                                          background_dofhandler.get_fe());
 
+      velocity_vector.update_ghost_values();
+
       for (const auto &cell : euler_dofhandler.active_cell_iterators())
         {
           fe_eval.reinit(cell);
@@ -880,8 +882,10 @@ compute_force_vector_sharp_interface(const Triangulation<dim, spacedim> &surface
   const auto fu = [&](const auto &values, const auto &cell_data) {
     AffineConstraints<double> constraints; // TODO: use the right ones
 
-    FEPointEvaluation<1, spacedim>        phi_curvature(mapping, dof_handler.get_fe());
-    FEPointEvaluation<spacedim, spacedim> phi_normal(mapping, dof_handler_dim.get_fe());
+    FEPointEvaluation<1, spacedim> phi_curvature(mapping, dof_handler.get_fe());
+
+    FESystem<spacedim>                    fe_dim(dof_handler.get_fe(), dim);
+    FEPointEvaluation<spacedim, spacedim> phi_normal(mapping, fe_dim);
     FEPointEvaluation<spacedim, spacedim> phi_force(mapping, dof_handler_dim.get_fe());
 
     std::vector<double>                  buffer;
@@ -931,6 +935,7 @@ compute_force_vector_sharp_interface(const Triangulation<dim, spacedim> &surface
 
         // gather_evaluate normal
         {
+          buffer_dim.resize(fe_dim.n_dofs_per_cell());
           for (int i = 0; i < dim; ++i)
             {
               constraints.get_dof_values(normal_solution.block(i),
@@ -938,11 +943,10 @@ compute_force_vector_sharp_interface(const Triangulation<dim, spacedim> &surface
                                          buffer.begin(),
                                          buffer.end());
               for (unsigned int c = 0; c < cell->get_fe().n_dofs_per_cell(); ++c)
-                buffer_dim[dof_handler_dim.get_fe().component_to_system_index(i, c)] =
-                  buffer[c];
+                buffer_dim[fe_dim.component_to_system_index(i, c)] = buffer[c];
             }
 
-          phi_normal.evaluate(cell_dim,
+          phi_normal.evaluate(cell,
                               unit_points,
                               make_array_view(buffer_dim),
                               EvaluationFlags::values);
@@ -956,10 +960,15 @@ compute_force_vector_sharp_interface(const Triangulation<dim, spacedim> &surface
 
         // integrate_scatter force
         {
-          phi_force.integrate(cell_dim, unit_points, buffer_dim, EvaluationFlags::values);
+          buffer_dim.resize(dof_handler_dim.get_fe().n_dofs_per_cell());
+          local_dof_indices.resize(dof_handler_dim.get_fe().n_dofs_per_cell());
+
+          phi_force.integrate(cell, unit_points, buffer_dim, EvaluationFlags::values);
+
+          cell_dim->get_dof_indices(local_dof_indices);
 
           constraints.distribute_local_to_global(buffer_dim,
-                                                 local_dof_indices_dim,
+                                                 local_dof_indices,
                                                  force_vector);
         }
       }
