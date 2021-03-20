@@ -392,7 +392,7 @@ test(const std::string &parameter_filename)
                                        mapping,
                                        dof_handler,
                                        dof_handler_dim,
-                                       1.0,
+                                       1.0, /*TODO*/
                                        normal_vector_field,
                                        curvature_solution,
                                        force_vector_sharp_interface);
@@ -495,7 +495,7 @@ test(const std::string &parameter_filename)
                                            mapping,
                                            level_set_solver.get_dof_handler(),
                                            level_set_solver.get_dof_handler_dim(),
-                                           1.0,
+                                           1.0, /*TODO*/
                                            level_set_solver.get_normal_vector(),
                                            level_set_solver.get_curvature_vector(),
                                            force_vector_sharp_interface);

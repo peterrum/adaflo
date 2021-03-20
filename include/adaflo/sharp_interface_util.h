@@ -773,7 +773,7 @@ compute_force_vector_sharp_interface(const Triangulation<dim, spacedim> &surface
                                      const VectorType &          curvature_solution,
                                      VectorType &                force_vector)
 {
-  using T = double;
+  using T = double; // type of data to be communicated (only |J|xW)
 
   const auto integration_points = [&]() {
     std::vector<Point<spacedim>> integration_points;
@@ -826,7 +826,7 @@ compute_force_vector_sharp_interface(const Triangulation<dim, spacedim> &surface
     return integration_values;
   }();
 
-  const auto fu = [&](const auto &values, const auto &cell_data) {
+  const auto integration_function = [&](const auto &values, const auto &cell_data) {
     AffineConstraints<double> constraints; // TODO: use the right ones
 
     FEPointEvaluation<1, spacedim> phi_curvature(mapping, dof_handler.get_fe());
@@ -929,10 +929,10 @@ compute_force_vector_sharp_interface(const Triangulation<dim, spacedim> &surface
   normal_solution.update_ghost_values();
   curvature_solution.update_ghost_values();
 
-  eval.template process_and_evaluate<T>(integration_values, buffer, fu);
+  eval.template process_and_evaluate<T>(integration_values, buffer, integration_function);
 
-  normal_solution.update_ghost_values();
-  curvature_solution.update_ghost_values();
+  normal_solution.zero_out_ghost_values();
+  curvature_solution.zero_out_ghost_values();
   force_vector.compress(VectorOperation::values::add);
 }
 

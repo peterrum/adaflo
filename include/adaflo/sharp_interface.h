@@ -763,7 +763,7 @@ public:
     euler_vector.reinit(euler_dofhandler.n_dofs());
     euler_vector.update_ghost_values();
     VectorTools::
-      get_position_vector(MappingQGeneric<dim - 1, dim>(4 /*TODO: this is a high number to well represent curved surfaces, the actual values is not that relevant*/), euler_dofhandler, euler_vector);
+      get_position_vector(MappingQGeneric<dim - 1, dim>(4 /*TODO: this is a high number to well represent curved surfaces, the actual value is not that relevant*/), euler_dofhandler, euler_vector);
     euler_vector.zero_out_ghost_values();
     euler_mapping =
       std::make_shared<MappingFEField<dim - 1, dim, VectorType>>(euler_dofhandler,
