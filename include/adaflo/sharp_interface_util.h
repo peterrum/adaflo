@@ -775,9 +775,8 @@ compute_force_vector_sharp_interface(const Triangulation<dim, spacedim> &surface
 {
   using T = double; // type of data to be communicated (only |J|xW)
 
-  const auto integration_points = [&]() {
-    std::vector<Point<spacedim>> integration_points;
-
+  std::vector<Point<spacedim>> integration_points;
+  {
     FE_Nothing<dim, spacedim> dummy;
 
     FEValues<dim, spacedim> fe_eval(surface_mapping,
@@ -795,16 +794,13 @@ compute_force_vector_sharp_interface(const Triangulation<dim, spacedim> &surface
         for (const auto q : fe_eval.quadrature_point_indices())
           integration_points.push_back(fe_eval.quadrature_point(q));
       }
-
-    return integration_points;
-  }();
+  }
 
   Utilities::MPI::RemotePointEvaluation<spacedim, spacedim> eval;
   eval.reinit(integration_points, dof_handler.get_triangulation(), mapping);
 
-  const auto integration_values = [&]() {
-    std::vector<T> integration_values;
-
+  std::vector<T> integration_values;
+  {
     FE_Nothing<dim, spacedim> dummy;
 
     FEValues<dim, spacedim> fe_eval(surface_mapping,
@@ -822,9 +818,7 @@ compute_force_vector_sharp_interface(const Triangulation<dim, spacedim> &surface
         for (const auto q : fe_eval.quadrature_point_indices())
           integration_values.push_back(fe_eval.JxW(q));
       }
-
-    return integration_values;
-  }();
+  }
 
   const auto integration_function = [&](const auto &values, const auto &cell_data) {
     AffineConstraints<double> constraints; // TODO: use the right ones
@@ -898,7 +892,7 @@ compute_force_vector_sharp_interface(const Triangulation<dim, spacedim> &surface
                               EvaluationFlags::values);
         }
 
-        // perform operation on quadrature points
+        // perform operation at quadrature points
         for (unsigned int q = 0; q < unit_points.size(); ++q)
           {
             Assert(phi_normal.get_value(q).norm() > 0, ExcNotImplemented());
@@ -933,7 +927,7 @@ compute_force_vector_sharp_interface(const Triangulation<dim, spacedim> &surface
 
   normal_solution.zero_out_ghost_values();
   curvature_solution.zero_out_ghost_values();
-  force_vector.compress(VectorOperation::values::add);
+  force_vector.compress(VectorOperation::add);
 }
 
 
@@ -1089,7 +1083,7 @@ compute_force_vector_sharp_interface(const Quadrature<dim - 1> &surface_quad,
   normal_vector_field.zero_out_ghost_values();
   curvature_solution.zero_out_ghost_values();
   ls_vector.zero_out_ghost_values();
-  force_vector.compress(VectorOperation::values::add);
+  force_vector.compress(VectorOperation::add);
 }
 
 
