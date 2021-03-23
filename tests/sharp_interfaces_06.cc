@@ -180,7 +180,6 @@ MicroFluidicProblem<dim>::evaluate_spurious_velocities(NavierStokes<dim> &navier
 
           if (ns_cell->center().norm() < 0.1)
             {
-              //pcout << "ns_cell_center_norm" << ns_cell->center().norm() << std::endl;
               ns_values.get_function_values(navier_stokes_solver.solution.block(1), p_values);
               for (unsigned int q = 0; q < n_q_points; ++q)
                 {
@@ -211,15 +210,14 @@ MicroFluidicProblem<dim>::evaluate_spurious_velocities(NavierStokes<dim> &navier
                      2. * (dim - 1) * parameters.surface_tension) /
                     (2 * (dim - 1) * parameters.surface_tension) * 100.;
     std::cout.precision(8);
-    //pcout << "  pressure_average:  " << pressure_average << "   one_average: " << one_average << std::endl;
-    //pcout << "  press_b:  " << press_b << "  one_b: " << one_b << std::endl;
+    // output relative pressure error
     pcout << "  Error in pressure jump: " << pressure_jump << " %" << std::endl;
   }
 
-  // calculate spurious currents
+  // output spurious currents
   pcout << "  Size spurious currents, absolute: " << norm_velocity << std::endl;
 
-  // TODO: Do I need this?
+  // save data for .txt output
   std::vector<double> data(3);
   data[0] = navier_stokes_solver.time_stepping.now();
   data[1] = norm_velocity;
@@ -280,7 +278,7 @@ MicroFluidicProblem<dim>::run()
 
       solver->output_solution(parameters.output_filename);
 
-      // evaluate velocity norm and pressure jump
+      // evaluate velocity norm and relative pressure error
       evaluate_spurious_velocities(navier_stokes_solver);
     }
 }
