@@ -13,47 +13,33 @@
 #
 # --------------------------------------------------------------------------
 # Listing of Parameters
-#
-# mpirun: 2
-subsection Problem-specific
-  set two-phase method = level set
-end
-subsection Two phase
-  set density              = 1.
-  set density difference   = 0.
-  set viscosity            = 0.1
-  set viscosity difference = 0
-  set surface tension      = 1.0
-  set epsilon              = 1.5
-  set gravity              = 0.
-  set concentration subdivisions = 3
-  set grad pressure compatible = 1
-  set localize surface tension = 1
-  set curvature correction = 1
-  set number reinit steps = 2
-  set number initial reinit steps = 0
-end
 subsection Time stepping
   set scheme           = bdf_2
-  set end time         = 0.3
+  set end time         = 1
   set step size        = 0.01
 end
 subsection Navier-Stokes
-  set dimension            = 2
-  set global refinements   = 4
-  set adaptive refinements = 0
-  set velocity degree      = 2
+  set physical type      = incompressible
+  set dimension          = 1
+  set velocity degree    = 2
+  set density            = 1.0
+  set viscosity          = 0.01
   subsection Solver
+    set linearization scheme         = coupled implicit Newton
     set NL max iterations            = 10
     set NL tolerance                 = 1.e-9
-    set lin max iterations           = 500
-    set lin tolerance                = 1.e-6
-    set lin its before inner solvers = 50
+    set lin max iterations           = 30
+    set lin tolerance                = 1.e-5
+    set lin relative tolerance       = 1
+    set lin velocity preconditioner  = ilu scalar
+    set lin pressure mass preconditioner = ilu
+    set lin its before inner solvers = 30
+    set tau grad div = 1.e-5
   end
 end
 subsection Output options
-  set output filename  = output-sharp_interfaces_06/data
-  set output verbosity = 1
-  set output frequency = 0.01
+  set output verbosity = 2
+  set output frequency = 0.02
+  set output filename  = output-1d_flow/data
   set output vtk files = 1
 end
