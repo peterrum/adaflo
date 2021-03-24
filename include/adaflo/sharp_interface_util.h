@@ -22,8 +22,6 @@
 #include <deal.II/fe/fe_nothing.h>
 #include <deal.II/fe/fe_point_evaluation.h>
 #include <deal.II/fe/fe_q_iso_q1.h>
-#include <deal.II/fe/fe_q_dg0.h>
-#include <deal.II/fe/fe_q.h>
 #include <deal.II/fe/mapping_fe_field.h>
 
 #include <deal.II/grid/grid_tools_cache.h>
@@ -320,7 +318,7 @@ namespace dealii
                        std::vector<Point<dim>> &         vertices,
                        std::vector<::CellData<dim - 1>> &cells)
       {
-        // cases 0-15 (see wikipedia)
+        // cases 0-15 
         unsigned int c = 0;
 
         for (unsigned int i = 0, scale = 1; i < 4; ++i, scale *= 2)

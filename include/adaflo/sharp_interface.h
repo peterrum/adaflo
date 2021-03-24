@@ -30,7 +30,6 @@
 #include <boost/geometry/geometries/point_xy.hpp>
 #include <boost/geometry/geometries/polygon.hpp>
 
-#include <adaflo/level_set_okz.h>
 #include <adaflo/level_set_okz_advance_concentration.h>
 #include <adaflo/level_set_okz_compute_curvature.h>
 #include <adaflo/level_set_okz_compute_normal.h>
@@ -289,7 +288,7 @@ public:
         parameters.epsilon / parameters.concentration_subdivisions * epsilon_used;
 
       pcout << "epsilon_used: " << epsilon_used << " epsilon_input: " 
-            << parameters.epsilon << " level set degree:  " << parameters.concentration_subdivisions << std::endl;
+            << parameters.epsilon << std::endl;
 
       initialize_mass_matrix_diagonal(
         matrix_free, hanging_node_constraints, dof_index_ls, quad_index, preconditioner);
@@ -314,7 +313,7 @@ public:
     // transform_distance_function
     for (unsigned int i = 0; i < ls_solution.local_size(); i++)
       ls_solution.local_element(i) =
-         -std::tanh(ls_solution.local_element(i) / (2. * epsilon_used));
+        -std::tanh(ls_solution.local_element(i) / (2. * epsilon_used));
 
     reinitialize(true);
 
@@ -1052,7 +1051,6 @@ private:
 
   const bool use_auxiliary_surface_mesh;
   const bool use_sharp_interface;
-
   
   // background mesh
   NavierStokes<dim> & navier_stokes_solver;
@@ -1065,4 +1063,3 @@ private:
 };
 
 #endif
-

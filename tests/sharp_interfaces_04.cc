@@ -90,7 +90,6 @@ public:
   run();
 
 private:
-
   MPI_Comm           mpi_communicator;
   ConditionalOStream pcout;
 
@@ -98,7 +97,6 @@ private:
 
   TwoPhaseParameters                        parameters;
   parallel::distributed::Triangulation<dim> triangulation;
-  
 };
 
 template <int dim>
@@ -109,7 +107,6 @@ MicroFluidicProblem<dim>::MicroFluidicProblem(const TwoPhaseParameters &paramete
   , parameters(parameters)
   , triangulation(mpi_communicator)
 {}
-
 
 template <int dim>
 void
@@ -179,7 +176,6 @@ MicroFluidicProblem<dim>::run()
       solver->advance_time_step();
 
       solver->output_solution(parameters.output_filename);
-
     }
 }
 
