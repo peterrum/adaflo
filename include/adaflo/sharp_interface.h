@@ -47,8 +47,7 @@ class LevelSetSolver
 public:
   using VectorType      = LinearAlgebra::distributed::Vector<double>;
   using BlockVectorType = LinearAlgebra::distributed::BlockVector<double>;
-  ConditionalOStream    pcout;
-
+  
   static const unsigned int dof_index_ls        = 1;
   static const unsigned int dof_index_normal    = 2;
   static const unsigned int dof_index_curvature = 3;
