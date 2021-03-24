@@ -363,6 +363,7 @@ LevelSetOKZSolver<dim>::local_compute_force(
             }
         }
 
+      this->pcout << "pre val dofs = " << pre_values.dofs_per_cell << " ls val dofs= " << ls_values.dofs_per_cell << std::endl;
       // interpolate ls values onto pressure
       if (this->parameters.interpolate_grad_onto_pressure)
         {
@@ -375,6 +376,8 @@ LevelSetOKZSolver<dim>::local_compute_force(
               pre_values.submit_dof_value(projected_value, i);
             }
           pre_values.evaluate(false, true);
+          //TODO: remove
+          ls_values.evaluate(false, true);
         }
       else
         ls_values.evaluate(false, true);
@@ -382,7 +385,9 @@ LevelSetOKZSolver<dim>::local_compute_force(
       // evaluate curvature and level set gradient
       curv_values.read_dof_values_plain(this->solution.block(1));
       curv_values.evaluate(true, false);
-
+      
+      this->pcout << "n_q_points = " << n_q_points << "  curv values nq points = " << curv_values.n_q_points << std::endl;
+      
       // evaluate surface tension force and gravity force
       for (unsigned int q = 0; q < curv_values.n_q_points; ++q)
         {
@@ -392,6 +397,9 @@ LevelSetOKZSolver<dim>::local_compute_force(
             (this->parameters.interpolate_grad_onto_pressure ?
                pre_values.get_gradient(q) :
                ls_values.get_gradient(q));
+
+          this->pcout << "pre val grad = " << pre_values.get_gradient(q) <<  std::endl;
+          this->pcout << " ls val grad = " << ls_values.get_gradient(q) << std::endl;
 
           // gravity
           vector_t actual_rho =
