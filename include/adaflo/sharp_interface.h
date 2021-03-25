@@ -352,6 +352,18 @@ public:
     this->reinitialize();
   }
 
+  const MappingQ1<dim> &
+  get_mapping()
+  {
+    return mapping;
+  }
+
+  const FiniteElement<dim> &
+  get_fe_ls() 
+  {
+    return fe;
+  }
+
   const VectorType &
   get_level_set_vector()
   {
@@ -430,6 +442,7 @@ private:
   double                                 epsilon_used;
 
   MappingQ1<dim> mapping;
+  const FESystem<dim> fe;
 
   // DoFHandlers
   DoFHandler<dim> dof_handler;     // for ls, normal, curvature
@@ -476,6 +489,8 @@ private:
   std::unique_ptr<LevelSetOKZSolverComputeCurvature<dim>>     curvature_operator;
   std::unique_ptr<LevelSetOKZSolverAdvanceConcentration<dim>> advection_operator;
 };
+
+//template class LevelSetSolver<2>;
 
 
 

@@ -94,6 +94,7 @@ void
   evaluate_spurious_velocities(NavierStokes<dim> &navier_stokes_solver);
 
   std::vector<double> compute_bubble_statistics(
+    LevelSetSolver<2>          &level_set_solver,
     NavierStokes<2>            &navier_stokes_solver,
     std::vector<Tensor<2, dim>> *interface_points = 0,
     const unsigned int           sub_refinements  = numbers::invalid_unsigned_int) const;
@@ -107,6 +108,8 @@ void
   parallel::distributed::Triangulation<dim> triangulation;
 
   std::unique_ptr<TwoPhaseBaseAlgorithm<dim>> two_phase_solver;
+  LevelSetSolver<2>     level_set_solver;
+  NavierStokes<2>         navier_stokes_solver;
 
   std::vector<std::vector<double>> solution_data_spc;
   std::vector<std::vector<double>> solution_data;
@@ -119,6 +122,16 @@ MicroFluidicProblem<dim>::MicroFluidicProblem(const TwoPhaseParameters &paramete
   , timer(pcout, TimerOutput::summary, TimerOutput::cpu_and_wall_times)
   , parameters(parameters)
   , triangulation(mpi_communicator)
+  , navier_stokes_solver(navier_stokes_solver)
+  , level_set_solver(navier_stokes_solver.get_dof_handler_u().get_triangulation(),
+                       InitialValuesLS<dim>(),
+                       navier_stokes_solver.get_parameters(),
+                       navier_stokes_solver.time_stepping,
+                       navier_stokes_solver.solution.block(0),
+                       navier_stokes_solver.solution_old.block(0),
+                       navier_stokes_solver.solution_old_old.block(0),
+                       navier_stokes_solver.boundary->fluid_type,
+                       navier_stokes_solver.boundary->symmetry)
 {
   two_phase_solver = std::make_unique<LevelSetOKZSolver<dim>>(parameters, triangulation);
 }
@@ -242,6 +255,7 @@ MicroFluidicProblem<dim>::evaluate_spurious_velocities(NavierStokes<dim> &navier
 
 template <>
 std::vector<double> MicroFluidicProblem<2>::compute_bubble_statistics(
+  LevelSetSolver<2>         &level_set_solver,
   NavierStokes<2>           &navier_stokes_solver,
   std::vector<Tensor<2, 2>> *interface_points,
   const unsigned int         sub_refinements) const
@@ -256,15 +270,15 @@ std::vector<double> MicroFluidicProblem<2>::compute_bubble_statistics(
   const QIterated<dim> quadrature_formula(QTrapez<1>(), sub_per_d);
   const QGauss<dim>    interior_quadrature(parameters.velocity_degree);
   const unsigned int   n_q_points = quadrature_formula.size();
-  FEValues<dim>        fe_values(mapping,
-                          *fe,
+  FEValues<dim>        fe_values(level_set_solver.get_mapping(),
+                          level_set_solver.get_fe_ls(),
                           quadrature_formula,
                           update_values | update_JxW_values | update_quadrature_points);
-  FEValues<dim>        ns_values(mapping,
+  FEValues<dim>        ns_values(navier_stokes_solver.mapping,
                           navier_stokes_solver.get_fe_u(),
                           quadrature_formula,
                           update_values);
-  FEValues<dim>        interior_ns_values(mapping,
+  FEValues<dim>        interior_ns_values(navier_stokes_solver.mapping,
                                    navier_stokes_solver.get_fe_u(),
                                    interior_quadrature,
                                    update_values | update_JxW_values |
@@ -280,7 +294,10 @@ std::vector<double> MicroFluidicProblem<2>::compute_bubble_statistics(
   std::vector<Tensor<1, dim>> velocity_values(n_q_points), velocities(n_points),
     int_velocity_values(interior_quadrature.size());
   std::vector<Point<dim>> quad(n_points);
-  Vector<double>          sol_values(fe->dofs_per_cell);
+  Vector<double>          sol_values(level_set_solver.get_fe_ls().dofs_per_cell);
+
+  double global_omega_diameter = GridTools::diameter(triangulation);
+
   for (unsigned int i = 0; i < n_q_points; i++)
     {
       weight_correction[i] = 1;
@@ -295,19 +312,21 @@ std::vector<double> MicroFluidicProblem<2>::compute_bubble_statistics(
     interface_points->clear();
   double                                area = 0, perimeter = 0;
   Tensor<1, dim>                        center_of_mass, velocity;
-  DoFHandler<dim>::active_cell_iterator cell = dof_handler.begin_active(),
-                                        endc = dof_handler.end();
+  DoFHandler<dim>::active_cell_iterator cell = level_set_solver.get_dof_handler().begin_active(),
+                                        endc = level_set_solver.get_dof_handler().end();
   DoFHandler<dim>::active_cell_iterator ns_cell =
-    navier_stokes.get_dof_handler_u().begin_active();
+    navier_stokes_solver.get_dof_handler_u().begin_active();
   for (; cell != endc; ++cell, ++ns_cell)
     if (cell->is_locally_owned())
       {
         // cheap test: find out whether the interface crosses this cell,
         // i.e. two solution values have a different sign. if not, can compute
         // with a low order Gauss quadrature without caring about the interface
-        cell->get_interpolated_dof_values(solution.block(0), sol_values);
+        //TODO: right? ls value not velocity or so?
+        cell->get_interpolated_dof_values(level_set_solver.get_level_set_vector(), sol_values);
+          //solution.block(0), sol_values);
         bool interface_crosses_cell = false;
-        for (unsigned int i = 1; i < fe->dofs_per_cell; ++i)
+        for (unsigned int i = 1; i < level_set_solver.get_fe_ls().dofs_per_cell; ++i)
           if (sol_values(i) * sol_values(0) <= 0)
             interface_crosses_cell = true;
 
@@ -315,7 +334,7 @@ std::vector<double> MicroFluidicProblem<2>::compute_bubble_statistics(
           {
             bool has_area = sol_values(0) > 0;
             interior_ns_values.reinit(ns_cell);
-            interior_ns_values[vel].get_function_values(navier_stokes.solution.block(0),
+            interior_ns_values[vel].get_function_values(navier_stokes_solver.solution.block(0),
                                                         int_velocity_values);
             for (unsigned int q = 0; q < interior_quadrature.size(); q++)
               {
@@ -337,9 +356,11 @@ std::vector<double> MicroFluidicProblem<2>::compute_bubble_statistics(
         // when the interface crosses this cell, have to find the crossing
         // points (linear interpolation) and compute the area fraction
         fe_values.reinit(cell);
-        fe_values.get_function_values(solution.block(0), full_c_values);
+        // TODO: check if ls value right!
+        //fe_values.get_function_values(solution.block(0), full_c_values);
+        fe_values.get_function_values(level_set_solver.get_level_set_vector(), full_c_values);
         ns_values.reinit(ns_cell);
-        ns_values[vel].get_function_values(navier_stokes.solution.block(0),
+        ns_values[vel].get_function_values(navier_stokes_solver.solution.block(0),
                                            velocity_values);
 
         for (unsigned int d = 0; d < n_subdivisions; d++)
@@ -484,7 +505,7 @@ std::vector<double> MicroFluidicProblem<2>::compute_bubble_statistics(
       global_mass_center[d] = Utilities::MPI::sum(center_of_mass[d], mpi_communicator);
     }
 
-  set_adaptive_time_step(global_velocity.norm() / global_area);
+  two_phase_solver->set_adaptive_time_step(global_velocity.norm() / global_area);
 
   const double circularity = 2. * std::sqrt(global_area * numbers::PI) / global_perimeter;
   if (parameters.output_verbosity > 0)
@@ -501,13 +522,13 @@ std::vector<double> MicroFluidicProblem<2>::compute_bubble_statistics(
       pcout << std::endl;
       pcout << "  Position of the center of mass:  ";
       for (unsigned int d = 0; d < dim; ++d)
-        pcout << ((std::abs(global_mass_center[d]) < 1e-7 * this->global_omega_diameter) ?
+        pcout << ((std::abs(global_mass_center[d]) < 1e-7 * global_omega_diameter) ?
                     0. :
                     (global_mass_center[d] / global_area))
               << "  ";
       pcout << std::endl;
 
-      std::pair<double, double> concentration = get_concentration_range();
+      std::pair<double, double> concentration = two_phase_solver->get_concentration_range();
       pcout << "  Range of level set values: " << concentration.first << " / "
             << concentration.second << std::endl;
 
@@ -660,7 +681,7 @@ MicroFluidicProblem<dim>::run()
   solver->output_solution(parameters.output_filename);
   // bubble statistics
   std::vector<std::vector<double>> solution_data;
-  solution_data.push_back(compute_bubble_statistics(navier_stokes_solver,0));
+  solution_data.push_back(compute_bubble_statistics(level_set_solver,navier_stokes_solver,0));
 
   bool first_output = true;
   while (navier_stokes_solver.time_stepping.at_end() == false)
@@ -672,7 +693,7 @@ MicroFluidicProblem<dim>::run()
       // evaluate velocity norm and pressure jump
       evaluate_spurious_velocities(navier_stokes_solver);
       // evaluate bubble
-      solution_data.push_back(compute_bubble_statistics(navier_stokes_solver,0));
+      solution_data.push_back(compute_bubble_statistics(level_set_solver,navier_stokes_solver,0));
     
       if (solution_data.size() > 0 &&
         Utilities::MPI::this_mpi_process(triangulation.get_communicator()) == 0 &&

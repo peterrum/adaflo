@@ -1056,9 +1056,6 @@ compute_force_vector_sharp_interface(const Quadrature<dim - 1> &surface_quad,
 
       local_dof_indices.resize(cell->get_fe().n_dofs_per_cell());
       buffer.resize(cell->get_fe().n_dofs_per_cell());
-      //TODO: resize how big?
-      buffer_1.resize(navier_stokes_getfep.n_dofs_per_cell());
-      buffer_2.resize(cell->get_fe().n_dofs_per_cell());
       buffer_dim.resize(cell->get_fe().n_dofs_per_cell() * dim);
 
       cell->get_dof_indices(local_dof_indices);
