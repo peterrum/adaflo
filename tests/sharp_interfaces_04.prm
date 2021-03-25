@@ -16,7 +16,7 @@
 #
 # mpirun: 2
 subsection Problem-specific
-  set two-phase method = sharp level set
+  set two-phase method = level set
 end
 subsection Two phase
   set density              = 1.

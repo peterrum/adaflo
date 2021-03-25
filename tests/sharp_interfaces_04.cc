@@ -108,9 +108,10 @@ void
   parallel::distributed::Triangulation<dim> triangulation;
 
   std::unique_ptr<TwoPhaseBaseAlgorithm<dim>> two_phase_solver;
-  LevelSetSolver<2>     level_set_solver;
-  NavierStokes<2>         navier_stokes_solver;
-
+  //TwoPhaseBaseAlgorithm<dim> level_set_solver;
+  //LevelSetSolver<2>     level_set_solver;
+  //<NavierStokes<2>        navier_stokes_solver;
+  
   std::vector<std::vector<double>> solution_data_spc;
   std::vector<std::vector<double>> solution_data;
 };
@@ -122,7 +123,8 @@ MicroFluidicProblem<dim>::MicroFluidicProblem(const TwoPhaseParameters &paramete
   , timer(pcout, TimerOutput::summary, TimerOutput::cpu_and_wall_times)
   , parameters(parameters)
   , triangulation(mpi_communicator)
-  , navier_stokes_solver(navier_stokes_solver)
+  /*, navier_stokes_solver(parameters, triangulation, &timer)
+  LevelSetSolver<2>     level_set_solver;
   , level_set_solver(navier_stokes_solver.get_dof_handler_u().get_triangulation(),
                        InitialValuesLS<dim>(),
                        navier_stokes_solver.get_parameters(),
@@ -131,9 +133,12 @@ MicroFluidicProblem<dim>::MicroFluidicProblem(const TwoPhaseParameters &paramete
                        navier_stokes_solver.solution_old.block(0),
                        navier_stokes_solver.solution_old_old.block(0),
                        navier_stokes_solver.boundary->fluid_type,
-                       navier_stokes_solver.boundary->symmetry)
+                       navier_stokes_solver.boundary->symmetry)*/
 {
+  pcout << "here" << std::endl;
   two_phase_solver = std::make_unique<LevelSetOKZSolver<dim>>(parameters, triangulation);
+  //const NavierStokes<dim> navier_stokes_solver(parameters, triangulation, &timer);
+
 }
 
 template <int dim>
@@ -635,6 +640,8 @@ MicroFluidicProblem<dim>::run()
     cell = triangulation.begin(),
     endc = triangulation.end();
 
+    pcout << "before cell" << std::endl;
+
   for (; cell != endc; ++cell)
     for (unsigned int face = 0; face < GeometryInfo<dim>::faces_per_cell; ++face)
       if (cell->face(face)->at_boundary() &&
@@ -643,6 +650,7 @@ MicroFluidicProblem<dim>::run()
         cell->face(face)->set_boundary_id(2);
 
   AssertThrow(parameters.global_refinements < 12, ExcInternalError());
+  pcout << "before NS" << std::endl;
 
   NavierStokes<dim> navier_stokes_solver(parameters, triangulation, &timer);
 
@@ -655,11 +663,28 @@ MicroFluidicProblem<dim>::run()
   navier_stokes_solver.setup_problem(Functions::ZeroFunction<dim>(dim));
   navier_stokes_solver.print_n_dofs();
 
+  pcout << "before surface mesh" << std::endl;
   Triangulation<dim - 1, dim> surface_mesh;
   GridGenerator::hyper_sphere(surface_mesh, Point<dim>(0.5, 0.5), 0.25);
   surface_mesh.refine_global(5);
 
+  pcout << "before solver" << std::endl;
   std::unique_ptr<SharpInterfaceSolver> solver;
+
+  
+  auto ft = navier_stokes_solver.boundary->fluid_type;
+  auto bd_sym = navier_stokes_solver.boundary->symmetry;
+  pcout << "before ls solver" << std::endl;
+  LevelSetSolver<dim>  level_set_solver(navier_stokes_solver.get_dof_handler_u().get_triangulation(),
+                       InitialValuesLS<dim>(),
+                       navier_stokes_solver.get_parameters(),
+                       navier_stokes_solver.time_stepping,
+                       navier_stokes_solver.solution.block(0),
+                       navier_stokes_solver.solution_old.block(0),
+                       navier_stokes_solver.solution_old_old.block(0),
+                       navier_stokes_solver.boundary->fluid_type,
+                       navier_stokes_solver.boundary->symmetry);
+  pcout << "after ls solver" << std::endl;
 
   if (parameters.solver_method == "front tracking")
     solver =
@@ -677,11 +702,13 @@ MicroFluidicProblem<dim>::run()
                                                         false);
   else
     AssertThrow(false, ExcNotImplemented());
-
+  pcout << "after solver" << std::endl;
   solver->output_solution(parameters.output_filename);
   // bubble statistics
-  std::vector<std::vector<double>> solution_data;
+  //std::vector<std::vector<double>> solution_data;
+  pcout << "before bubble statistics" << std::endl;
   solution_data.push_back(compute_bubble_statistics(level_set_solver,navier_stokes_solver,0));
+  pcout << "after bubble statistics" << std::endl;
 
   bool first_output = true;
   while (navier_stokes_solver.time_stepping.at_end() == false)
@@ -691,16 +718,20 @@ MicroFluidicProblem<dim>::run()
       solver->output_solution(parameters.output_filename);
 
       // evaluate velocity norm and pressure jump
+      pcout << "before spr curr" << std::endl;
       evaluate_spurious_velocities(navier_stokes_solver);
+      pcout << "after spr curr" << std::endl;
       // evaluate bubble
       solution_data.push_back(compute_bubble_statistics(level_set_solver,navier_stokes_solver,0));
-    
+
+    pcout << "before two phase solver" << std::endl;
       if (solution_data.size() > 0 &&
         Utilities::MPI::this_mpi_process(triangulation.get_communicator()) == 0 &&
         two_phase_solver->get_time_stepping().at_tick(parameters.output_frequency))
+        pcout << "after two phase solver" << std::endl;
       {
         const int time_step = 1.000001e4 * two_phase_solver->get_time_stepping().step_size();
-
+        pcout << "after time steppting" << std::endl;
         std::ostringstream filename3;
         filename3 << parameters.output_filename << "-"
                   << Utilities::int_to_string((int)parameters.adaptive_refinements, 1)
@@ -750,7 +781,9 @@ main(int argc, char **argv)
       TwoPhaseParameters parameters(paramfile);
       if (parameters.dimension == 2)
         {
+          std::cerr << "here????" << std::endl;
           MicroFluidicProblem<2> flow_problem(parameters);
+          std::cerr << "here?" << std::endl;
           flow_problem.run();
         }
       else
