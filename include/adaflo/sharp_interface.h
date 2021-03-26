@@ -162,7 +162,6 @@ public:
 
     {
       LevelSetOKZSolverAdvanceConcentrationParameter params;
-
       params.dof_index_ls             = dof_index_ls;
       params.dof_index_vel            = dof_index_velocity;
       params.quad_index               = quad_index;
@@ -361,8 +360,9 @@ public:
   const FiniteElement<dim> &
   get_fe_ls() 
   {
-    return fe;
+    return this->dof_handler.get_fe();
   }
+
 
   const VectorType &
   get_level_set_vector()
@@ -442,7 +442,7 @@ private:
   double                                 epsilon_used;
 
   MappingQ1<dim> mapping;
-  const FESystem<dim> fe;
+  //const FESystem<dim> fe;
 
   // DoFHandlers
   DoFHandler<dim> dof_handler;     // for ls, normal, curvature
