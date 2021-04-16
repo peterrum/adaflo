@@ -651,10 +651,6 @@ public:
     const double               global_omega_diameter,
     const unsigned int         sub_refinements) override
   {
-    //TODO: just for not getting a remark while compiling
-    double diameter = global_omega_diameter;
-    int sub = sub_refinements;
-
     std::vector<double> data(4 + 2 * dim);
     return data;
   }
@@ -1036,7 +1032,6 @@ public:
                                       update_quadrature_points);
 
     std::vector<Tensor<2, 2>> *interface_points = 0;
-
     const FEValuesExtractors::Vector vel(0);
 
     const unsigned int n_points       = 2 * (dim > 1 ? 2 : 1) * (dim > 2 ? 2 : 1),
@@ -1075,7 +1070,6 @@ public:
     for (; cell != endc; ++cell, ++ns_cell)
       if (cell->is_locally_owned())
         {
-           level_set_solver.pcout<< " in cell " << n_subdivisions << std::endl;
           // cheap test: find out whether the interface crosses this cell,
           // i.e. two solution values have a different sign. if not, can compute
           // with a low order Gauss quadrature without caring about the interface
@@ -1120,13 +1114,11 @@ public:
 
           for (unsigned int d = 0; d < n_subdivisions; d++)
             {
-              level_set_solver.pcout<< "d subdivision for loop, subdivision = " << n_subdivisions << std::endl;
-		// compute a patch of four points
+              // compute a patch of four points
               {
                 const int initial_shift = d % sub_per_d + (d / sub_per_d) * (sub_per_d + 1);
                 for (unsigned int i = 0; i < n_points; i++)
                   {
-              level_set_solver.pcout<< "i for loop, n_points = " << n_points << std::endl;
                     const unsigned int index =
                       initial_shift + (i / 2) * (sub_per_d - 1) + i;
                     Assert(index < n_q_points, ExcInternalError());
@@ -1177,7 +1169,6 @@ public:
                       perimeter += difference.norm();
                       interface_p[0] = pos_x0;
                       interface_p[1] = pos_y0;
-                      level_set_solver.pcout << "difference = " << difference << "   y0 = " << pos_y0 << "   x0 = " << pos_x0 << std::endl;
                     }
                   if (int_ry1 > 0)
                     {
@@ -1187,7 +1178,6 @@ public:
                       perimeter += difference.norm();
                       interface_p[0] = pos_x0;
                       interface_p[1] = pos_y1;
-                      level_set_solver.pcout << "difference = " << difference << "   x0 = " << pos_x0 << "   y1 = " << pos_y1 << std::endl;
                     }
                   if (int_rx1 > 0 && int_ry0 < 0 && int_ry1 < 0)
                     {
@@ -1197,7 +1187,6 @@ public:
                       perimeter += difference.norm();
                       interface_p[0] = pos_x0;
                       interface_p[1] = pos_x1;
-                      level_set_solver.pcout << "difference = " << difference << "   x0 = " << pos_x0 << "   x1 = " << pos_x1 << std::endl;
                     }
                 }
               if (int_rx1 > 0)
@@ -1210,7 +1199,6 @@ public:
                       perimeter += difference.norm();
                       interface_p[0] = pos_x1;
                       interface_p[1] = pos_y0;
-                      level_set_solver.pcout << "difference = " << difference << "   y0 = " << pos_y0 << "   x1 = " << pos_x1 << std::endl;
                     }
                   if (int_ry1 > 0)
                     {
@@ -1220,7 +1208,6 @@ public:
                       perimeter += difference.norm();
                       interface_p[0] = pos_x1;
                       interface_p[1] = pos_y1;
-                      level_set_solver.pcout << "difference = " << difference << "   x1 = " << pos_x1 << "   y1 = " << pos_y1 << std::endl;
                     }
                 }
               if (int_ry0 > 0 && int_ry1 > 0 && int_rx0 < 0 && int_rx1 < 0)
@@ -1231,7 +1218,6 @@ public:
                   perimeter += difference.norm();
                   interface_p[0] = pos_y0;
                   interface_p[1] = pos_y1;
-                  level_set_solver.pcout << "difference = " << difference << "   y0 = " << pos_y0 << "   y1 = " << pos_y1 << std::endl;
                 }
               if (int_rx0 <= 0 && int_rx1 <= 0 && int_ry0 <= 0 && int_ry1 <= 0 &&
                   c_values[0] <= 0)
@@ -1374,8 +1360,6 @@ public:
               }
           }
       }
-
-      level_set_solver.pcout << "reach end" <<std::endl;
 
     return data;
   }

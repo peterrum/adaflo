@@ -16,7 +16,7 @@
 #
 # mpirun: 2
 subsection Problem-specific
-  set two-phase method = mixed level set
+  set two-phase method = sharp level set
 end
 subsection Two phase
   set density              = 1.
@@ -53,7 +53,7 @@ subsection Navier-Stokes
   end
 end
 subsection Output options
-  set output filename  = output-sharp_interfaces_04/data_mls
+  set output filename  = output-sharp_interfaces_04/data_sls
   set output verbosity = 1
   set output frequency = 0.02
   set output vtk files = 1
