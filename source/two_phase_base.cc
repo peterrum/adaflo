@@ -622,9 +622,9 @@ std::vector<double> TwoPhaseBaseAlgorithm<2>::compute_bubble_statistics(
 {
   const unsigned int dim = 2;
 
-  const int sub_per_d = sub_refinements == numbers::invalid_unsigned_int ?
+  const int sub_per_d = 1; sub_refinements == numbers::invalid_unsigned_int ?
                           parameters.velocity_degree + 3 :
-                          sub_refinements;
+                          sub_refinements; 
   const QIterated<dim> quadrature_formula(QTrapez<1>(), sub_per_d);
   const QGauss<dim>    interior_quadrature(parameters.velocity_degree);
   const unsigned int   n_q_points = quadrature_formula.size();
@@ -645,9 +645,9 @@ std::vector<double> TwoPhaseBaseAlgorithm<2>::compute_bubble_statistics(
   const FEValuesExtractors::Vector vel(0);
 
   const unsigned int n_points       = 2 * (dim > 1 ? 2 : 1) * (dim > 2 ? 2 : 1),
-                     n_subdivisions = 1; /*(sub_per_d) * (dim > 1 ? (sub_per_d) : 1) *
+                     n_subdivisions = (sub_per_d) * (dim > 1 ? (sub_per_d) : 1) *
                                       (dim > 2 ? (sub_per_d) : 1); 
-                                      */
+                                      
   std::vector<double> full_c_values(n_q_points), c_values(n_points),
     quad_weights(n_points), weight_correction(n_q_points);
   std::vector<Tensor<1, dim>> velocity_values(n_q_points), velocities(n_points),
@@ -682,7 +682,7 @@ std::vector<double> TwoPhaseBaseAlgorithm<2>::compute_bubble_statistics(
         bool interface_crosses_cell = false;
         for (unsigned int i = 1; i < fe->dofs_per_cell; ++i)
           if (sol_values(i) * sol_values(0) <= 0)
-            interface_crosses_cell = true;
+            interface_crosses_cell = true; 
 
         if (interface_crosses_cell == false)
           {
@@ -729,7 +729,6 @@ std::vector<double> TwoPhaseBaseAlgorithm<2>::compute_bubble_statistics(
                   velocities[i]   = velocity_values[index];
                   quad[i]         = fe_values.quadrature_point(index);
                   quad_weights[i] = fe_values.JxW(index) * weight_correction[index];
-                  pcout << "d = " << d << " i = " << i << "   full_c_values = " << full_c_values[index] << std::endl;
                 }
             }
             double         local_area = 1;
@@ -830,17 +829,15 @@ std::vector<double> TwoPhaseBaseAlgorithm<2>::compute_bubble_statistics(
             if (interface_p != Tensor<2, dim>() && interface_points != 0)
               interface_points->push_back(interface_p);
 
-            Assert(local_area >= 0, ExcMessage("Subtracted too much"));
+            Assert(local_area >= 0, ExcMessage("Substracted too much"));
             for (unsigned int i = 0; i < n_points; ++i)
               {
                 double my_area = local_area * quad_weights[i];
-                //pcout << "local_area = " << local_area << "   quad weights= "<< quad_weights[i] << std::endl;
                 area += my_area;
                 for (unsigned int d = 0; d < dim; ++d)
                   {
                     center_of_mass[d] += quad[i][d] * my_area;
                     velocity[d] += velocities[i][d] * my_area;
-                    //pcout << "quad = " << quad[i][d] << std::endl;
                   }
               }
           }

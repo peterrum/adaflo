@@ -16,7 +16,7 @@
 #
 # mpirun: 2
 subsection Problem-specific
-  set two-phase method = sharp level set
+  set two-phase method = level set
 end
 subsection Two phase
   set density              = 1.
@@ -26,7 +26,7 @@ subsection Two phase
   set surface tension      = 0.0245
   set epsilon              = 1.5
   set gravity              = 0.98
-  set concentration subdivisions = 4
+  set concentration subdivisions = 1
   set grad pressure compatible = 1
   set localize surface tension = 1
   set curvature correction = 1
@@ -40,7 +40,7 @@ subsection Time stepping
 end
 subsection Navier-Stokes
   set dimension            = 2
-  set global refinements   = 3
+  set global refinements   = 1
   set adaptive refinements = 0
   set velocity degree      = 2
   subsection Solver
@@ -53,7 +53,7 @@ subsection Navier-Stokes
   end
 end
 subsection Output options
-  set output filename  = output-sharp_interfaces_04/data_sls
+  set output filename  = output-sharp_interfaces_04/data_ls_test
   set output verbosity = 1
   set output frequency = 0.02
   set output vtk files = 1

@@ -1007,8 +1007,6 @@ public:
     const double               global_omega_diameter,
     const unsigned int         sub_refinements) override
   {
-    level_set_solver.pcout << "compute bubble statistics dimension 2" << std::endl;
-
     //const unsigned int dim = 2;
 
     const int sub_per_d = sub_refinements == numbers::invalid_unsigned_int ?
@@ -1036,7 +1034,7 @@ public:
 
     const unsigned int n_points       = 2 * (dim > 1 ? 2 : 1) * (dim > 2 ? 2 : 1),
                       n_subdivisions = (sub_per_d) * (dim > 1 ? (sub_per_d) : 1) *
-                                        (dim > 2 ? (sub_per_d) : 1);
+                                        (dim > 2 ? (sub_per_d) : 1); 
     std::vector<double> full_c_values(n_q_points), c_values(n_points),
       quad_weights(n_points), weight_correction(n_q_points);
     std::vector<Tensor<1, dim>> velocity_values(n_q_points), velocities(n_points),
@@ -1078,7 +1076,6 @@ public:
           for (unsigned int i = 1; i < level_set_solver.get_fe_ls().dofs_per_cell; ++i){
             if (sol_values(i) * sol_values(0) <= 0){
               interface_crosses_cell = true;
-              //level_set_solver.pcout << "bs: i = " << i <<":   sol Value =  " << sol_values(i) << std::endl;
             }
           }
           if (interface_crosses_cell == false)

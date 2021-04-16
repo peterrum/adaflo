@@ -265,7 +265,7 @@ MicroFluidicProblem<dim>::run()
   AssertThrow(parameters.global_refinements < 12, ExcInternalError());
   
   global_omega_diameter = GridTools::diameter(triangulation);
-  pcout << "after diameter = " << global_omega_diameter << std::endl;
+  //pcout << "after diameter = " << global_omega_diameter << std::endl;
 
   NavierStokes<dim> navier_stokes_solver(parameters, triangulation, &timer);
   
@@ -337,9 +337,9 @@ MicroFluidicProblem<dim>::run()
             << std::endl;
         for (unsigned int i = 0; i < solution_data.size(); ++i)
           {
-            output_positions3 << " ";
+            output_positions3 << "  ";
             for (unsigned int j = 0; j < solution_data[i].size(); ++j)
-              output_positions3 << solution_data[i][j] << "   ";
+              output_positions3 << solution_data[i][j] << " ";
             output_positions3 << std::endl;
           }
         solution_data.clear();
