@@ -645,8 +645,9 @@ std::vector<double> TwoPhaseBaseAlgorithm<2>::compute_bubble_statistics(
   const FEValuesExtractors::Vector vel(0);
 
   const unsigned int n_points       = 2 * (dim > 1 ? 2 : 1) * (dim > 2 ? 2 : 1),
-                     n_subdivisions = (sub_per_d) * (dim > 1 ? (sub_per_d) : 1) *
-                                      (dim > 2 ? (sub_per_d) : 1);
+                     n_subdivisions = 1; /*(sub_per_d) * (dim > 1 ? (sub_per_d) : 1) *
+                                      (dim > 2 ? (sub_per_d) : 1); 
+                                      */
   std::vector<double> full_c_values(n_q_points), c_values(n_points),
     quad_weights(n_points), weight_correction(n_q_points);
   std::vector<Tensor<1, dim>> velocity_values(n_q_points), velocities(n_points),
@@ -728,6 +729,7 @@ std::vector<double> TwoPhaseBaseAlgorithm<2>::compute_bubble_statistics(
                   velocities[i]   = velocity_values[index];
                   quad[i]         = fe_values.quadrature_point(index);
                   quad_weights[i] = fe_values.JxW(index) * weight_correction[index];
+                  pcout << "d = " << d << " i = " << i << "   full_c_values = " << full_c_values[index] << std::endl;
                 }
             }
             double         local_area = 1;
@@ -832,11 +834,13 @@ std::vector<double> TwoPhaseBaseAlgorithm<2>::compute_bubble_statistics(
             for (unsigned int i = 0; i < n_points; ++i)
               {
                 double my_area = local_area * quad_weights[i];
+                //pcout << "local_area = " << local_area << "   quad weights= "<< quad_weights[i] << std::endl;
                 area += my_area;
                 for (unsigned int d = 0; d < dim; ++d)
                   {
                     center_of_mass[d] += quad[i][d] * my_area;
                     velocity[d] += velocities[i][d] * my_area;
+                    //pcout << "quad = " << quad[i][d] << std::endl;
                   }
               }
           }
@@ -854,6 +858,8 @@ std::vector<double> TwoPhaseBaseAlgorithm<2>::compute_bubble_statistics(
     {
       global_velocity[d]    = Utilities::MPI::sum(velocity[d], mpi_communicator);
       global_mass_center[d] = Utilities::MPI::sum(center_of_mass[d], mpi_communicator);
+      pcout << "d = " << d << " :   global_velocity = " << global_velocity[d] << "  velocity = " << velocity[d] <<std::endl;
+      pcout << "center of mass = " << center_of_mass[d] << "  global_mass_center = " << global_mass_center[d] << std::endl;
     }
 
   set_adaptive_time_step(global_velocity.norm() / global_area);

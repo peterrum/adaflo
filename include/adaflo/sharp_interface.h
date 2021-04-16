@@ -46,6 +46,8 @@ class LevelSetSolver
 public:
   using VectorType      = LinearAlgebra::distributed::Vector<double>;
   using BlockVectorType = LinearAlgebra::distributed::BlockVector<double>;
+  ConditionalOStream    pcout;
+  double                                 minimal_edge_length;
   
   static const unsigned int dof_index_ls        = 1;
   static const unsigned int dof_index_normal    = 2;
@@ -382,6 +384,12 @@ public:
     return curvature_solution;
   }
 
+   const double  &
+   get_min_edge_length()
+   {
+     return minimal_edge_length;
+   }       
+
   const DoFHandler<dim> &
   get_dof_handler() const
   {
@@ -430,7 +438,7 @@ private:
     curvature_operator->compute_curvature(/*diffuse_large_values*/ false);
   }
 
-  ConditionalOStream    pcout;
+  //ConditionalOStream    pcout;
   const FlowParameters &parameters;
   const TimeStepping &  time_stepping;
 
@@ -438,7 +446,7 @@ private:
   std::pair<double, double>              last_concentration_range;
   bool                                   first_reinit_step;
   AlignedVector<VectorizedArray<double>> cell_diameters;
-  double                                 minimal_edge_length;
+  //double                                 minimal_edge_length;
   double                                 epsilon_used;
 
   MappingQ1<dim> mapping;
@@ -502,6 +510,15 @@ public:
 
   virtual void
   output_solution(const std::string &output_filename) = 0;
+
+  std::pair<double, double>
+  get_concentration_range() ;
+
+  virtual std::vector<double>
+  compute_bubble_statistics(
+    const double                global_omega_diameter,
+    const unsigned int           sub_refinements  = numbers::invalid_unsigned_int) = 0;
+
 };
 
 
@@ -621,6 +638,28 @@ public:
     }
   }
 
+  //TODO: fill function if needed
+  std::pair<double, double>
+  get_concentration_range() 
+  {
+    return concentration;
+  }
+
+  //TODO: fill function if needed
+  std::vector<double> 
+  compute_bubble_statistics(
+    const double               global_omega_diameter,
+    const unsigned int         sub_refinements) override
+  {
+    //TODO: just for not getting a remark while compiling
+    double diameter = global_omega_diameter;
+    int sub = sub_refinements;
+
+    std::vector<double> data(4 + 2 * dim);
+    return data;
+  }
+
+
 private:
   void
   move_surface_mesh()
@@ -739,6 +778,8 @@ private:
       nullptr,
       zero_out);
   }
+  // data for bubble statistics
+  std::pair<double, double> concentration;
 
   // background mesh
   NavierStokes<dim> &navier_stokes_solver;
@@ -927,6 +968,419 @@ public:
       }
   }
 
+  // TODO: check if working at this postition???
+
+  //template <>
+  std::pair<double, double>
+  get_concentration_range() 
+  {
+    //const unsigned int dim = 2;
+    const QIterated<dim> quadrature_formula(QTrapez<1>(), level_set_solver.get_fe_ls().degree + 2);
+    FEValues<dim>        fe_values(level_set_solver.get_fe_ls(), quadrature_formula, update_values);
+    const unsigned int   n_q_points = quadrature_formula.size();
+    std::vector<double>  concentration_values(n_q_points);
+    Vector<double>          sol_values(level_set_solver.get_fe_ls().dofs_per_cell);
+
+    double min_concentration = std::numeric_limits<double>::max(),
+          max_concentration = -min_concentration;
+      
+    /*typename DoFHandler<dim>::active_cell_iterator cell = level_set_solver.get_dof_handler().begin_active(),
+                                                  endc = level_set_solver.get_dof_handler().end();
+    for (; cell != endc; ++cell) */
+    for (const auto &cell : level_set_solver.get_dof_handler().active_cell_iterators())
+      if (cell->is_locally_owned())
+        {
+          fe_values.reinit(cell);
+          fe_values.get_function_values(level_set_solver.get_level_set_vector(), concentration_values);
+          for (unsigned int q = 0; q < n_q_points; ++q)
+            {
+              const double concentration = concentration_values[q];
+              
+              min_concentration = std::min(min_concentration, concentration);
+              max_concentration = std::max(max_concentration, concentration);
+            }
+        }
+    last_concentration_range = std::make_pair(
+      -Utilities::MPI::max(-min_concentration, get_communicator(navier_stokes_solver.get_dof_handler_u().get_triangulation())),
+      Utilities::MPI::max(max_concentration, get_communicator(navier_stokes_solver.get_dof_handler_u().get_triangulation())));
+    return last_concentration_range;
+  }
+
+  std::vector<double> 
+  compute_bubble_statistics(
+    const double               global_omega_diameter,
+    const unsigned int         sub_refinements) override
+  {
+    level_set_solver.pcout << "compute bubble statistics dimension 2" << std::endl;
+
+    //const unsigned int dim = 2;
+
+    const int sub_per_d = sub_refinements == numbers::invalid_unsigned_int ?
+                            navier_stokes_solver.get_parameters().velocity_degree + 3 :
+                            sub_refinements;
+    const QIterated<dim> quadrature_formula(QTrapez<1>(), sub_per_d);
+    const QGauss<dim>    interior_quadrature(navier_stokes_solver.get_parameters().velocity_degree);
+    const unsigned int   n_q_points = quadrature_formula.size();
+    FEValues<dim>        fe_values(navier_stokes_solver.mapping,
+                            level_set_solver.get_dof_handler().get_fe(),
+                            quadrature_formula,
+                            update_values | update_JxW_values | update_quadrature_points);
+    FEValues<dim>        ns_values(navier_stokes_solver.mapping,
+                            navier_stokes_solver.get_fe_u(),
+                            quadrature_formula,
+                            update_values);
+    FEValues<dim>        interior_ns_values(navier_stokes_solver.mapping,
+                                    navier_stokes_solver.get_fe_u(),
+                                    interior_quadrature,
+                                    update_values | update_JxW_values |
+                                      update_quadrature_points);
+
+    std::vector<Tensor<2, 2>> *interface_points = 0;
+
+    const FEValuesExtractors::Vector vel(0);
+
+    const unsigned int n_points       = 2 * (dim > 1 ? 2 : 1) * (dim > 2 ? 2 : 1),
+                      n_subdivisions = (sub_per_d) * (dim > 1 ? (sub_per_d) : 1) *
+                                        (dim > 2 ? (sub_per_d) : 1);
+    std::vector<double> full_c_values(n_q_points), c_values(n_points),
+      quad_weights(n_points), weight_correction(n_q_points);
+    std::vector<Tensor<1, dim>> velocity_values(n_q_points), velocities(n_points),
+      int_velocity_values(interior_quadrature.size());
+    std::vector<Point<dim>> quad(n_points);
+    Vector<double>          sol_values(level_set_solver.get_dof_handler().get_fe().dofs_per_cell);
+    std::vector<double>          ls_values(n_q_points);
+
+
+    for (unsigned int i = 0; i < n_q_points; i++)
+      {
+        weight_correction[i] = 1;
+        unsigned int fact    = sub_per_d + 1;
+        if (i % fact > 0 && i % fact < fact - 1)
+          weight_correction[i] *= 0.5;
+        if (i >= fact && i < n_q_points - fact)
+          weight_correction[i] *= 0.5;
+      }
+
+    if (interface_points != 0)
+      interface_points->clear();
+    double                                area = 0, perimeter = 0;
+    Tensor<1, dim>                        center_of_mass, velocity;
+    
+    typename DoFHandler<dim>::active_cell_iterator cell = level_set_solver.get_dof_handler().begin_active(),
+                                          endc = level_set_solver.get_dof_handler().end();
+    
+    typename DoFHandler<dim>::active_cell_iterator ns_cell =
+      navier_stokes_solver.get_dof_handler_u().begin_active();
+    
+    for (; cell != endc; ++cell, ++ns_cell)
+      if (cell->is_locally_owned())
+        {
+           level_set_solver.pcout<< " in cell " << n_subdivisions << std::endl;
+          // cheap test: find out whether the interface crosses this cell,
+          // i.e. two solution values have a different sign. if not, can compute
+          // with a low order Gauss quadrature without caring about the interface
+          cell->get_interpolated_dof_values(level_set_solver.get_level_set_vector(), sol_values);
+          bool interface_crosses_cell = false;
+          for (unsigned int i = 1; i < level_set_solver.get_fe_ls().dofs_per_cell; ++i){
+            if (sol_values(i) * sol_values(0) <= 0){
+              interface_crosses_cell = true;
+              //level_set_solver.pcout << "bs: i = " << i <<":   sol Value =  " << sol_values(i) << std::endl;
+            }
+          }
+          if (interface_crosses_cell == false)
+            {
+              bool has_area = sol_values(0) > 0;
+              interior_ns_values.reinit(ns_cell);
+              interior_ns_values[vel].get_function_values(navier_stokes_solver.solution.block(0),
+                                                          int_velocity_values);
+              for (unsigned int q = 0; q < interior_quadrature.size(); q++)
+                {
+                  if (has_area)
+                    {
+                      area += interior_ns_values.JxW(q);
+                      for (unsigned int d = 0; d < dim; ++d)
+                        {
+                          center_of_mass[d] += (interior_ns_values.quadrature_point(q)[d] *
+                                                interior_ns_values.JxW(q));
+                          velocity[d] +=
+                            (int_velocity_values[q][d] * interior_ns_values.JxW(q));
+                        }
+                    }
+                }
+              continue;
+            }
+
+          // when the interface crosses this cell, have to find the crossing
+          // points (linear interpolation) and compute the area fraction
+          fe_values.reinit(cell);
+          fe_values.get_function_values(level_set_solver.get_level_set_vector(), full_c_values);
+          ns_values.reinit(ns_cell);
+          ns_values[vel].get_function_values(navier_stokes_solver.solution.block(0),
+                                            velocity_values);
+
+          for (unsigned int d = 0; d < n_subdivisions; d++)
+            {
+              level_set_solver.pcout<< "d subdivision for loop, subdivision = " << n_subdivisions << std::endl;
+		// compute a patch of four points
+              {
+                const int initial_shift = d % sub_per_d + (d / sub_per_d) * (sub_per_d + 1);
+                for (unsigned int i = 0; i < n_points; i++)
+                  {
+              level_set_solver.pcout<< "i for loop, n_points = " << n_points << std::endl;
+                    const unsigned int index =
+                      initial_shift + (i / 2) * (sub_per_d - 1) + i;
+                    Assert(index < n_q_points, ExcInternalError());
+                    c_values[i]     = full_c_values[index];
+                    velocities[i]   = velocity_values[index];
+                    quad[i]         = fe_values.quadrature_point(index);
+                    quad_weights[i] = fe_values.JxW(index) * weight_correction[index];
+                  }
+              }
+              double         local_area = 1;
+              double         int_rx0 = -1, int_rx1 = -1, int_ry0 = -1, int_ry1 = -1;
+              Tensor<1, dim> pos_x0, pos_x1, pos_y0, pos_y1;
+
+              // add a small perturbation to avoid having exact zero values
+              for (unsigned int i = 0; i < n_points; ++i)
+                c_values[i] += 1e-22;
+
+              // locate interface
+              if (c_values[0] * c_values[1] <= 0)
+                {
+                  int_rx0 = c_values[0] / (c_values[0] - c_values[1]);
+                  pos_x0  = quad[0] + (quad[1] - quad[0]) * int_rx0;
+                }
+              if (c_values[2] * c_values[3] <= 0)
+                {
+                  int_rx1 = c_values[2] / (c_values[2] - c_values[3]);
+                  pos_x1  = quad[2] + (quad[3] - quad[2]) * int_rx1;
+                }
+              if (c_values[0] * c_values[2] <= 0)
+                {
+                  int_ry0 = c_values[0] / (c_values[0] - c_values[2]);
+                  pos_y0  = quad[0] + (quad[2] - quad[0]) * int_ry0;
+                }
+              if (c_values[1] * c_values[3] <= 0)
+                {
+                  int_ry1 = c_values[1] / (c_values[1] - c_values[3]);
+                  pos_y1  = quad[1] + (quad[3] - quad[1]) * int_ry1;
+                }
+              Tensor<1, dim> difference;
+              Tensor<2, dim> interface_p;
+              if (int_rx0 > 0)
+                {
+                  if (int_ry0 > 0)
+                    {
+                      const double my_area = 0.5 * int_rx0 * int_ry0;
+                      local_area -= (c_values[0] < 0) ? my_area : 1 - my_area;
+                      difference = pos_x0 - pos_y0;
+                      perimeter += difference.norm();
+                      interface_p[0] = pos_x0;
+                      interface_p[1] = pos_y0;
+                      level_set_solver.pcout << "difference = " << difference << "   y0 = " << pos_y0 << "   x0 = " << pos_x0 << std::endl;
+                    }
+                  if (int_ry1 > 0)
+                    {
+                      const double my_area = 0.5 * (1 - int_rx0) * int_ry1;
+                      local_area -= (c_values[1] < 0) ? my_area : 1 - my_area;
+                      difference = pos_x0 - pos_y1;
+                      perimeter += difference.norm();
+                      interface_p[0] = pos_x0;
+                      interface_p[1] = pos_y1;
+                      level_set_solver.pcout << "difference = " << difference << "   x0 = " << pos_x0 << "   y1 = " << pos_y1 << std::endl;
+                    }
+                  if (int_rx1 > 0 && int_ry0 < 0 && int_ry1 < 0)
+                    {
+                      const double my_area = 0.5 * (int_rx0 + int_rx1);
+                      local_area -= (c_values[0] < 0) ? my_area : 1 - my_area;
+                      difference = pos_x0 - pos_x1;
+                      perimeter += difference.norm();
+                      interface_p[0] = pos_x0;
+                      interface_p[1] = pos_x1;
+                      level_set_solver.pcout << "difference = " << difference << "   x0 = " << pos_x0 << "   x1 = " << pos_x1 << std::endl;
+                    }
+                }
+              if (int_rx1 > 0)
+                {
+                  if (int_ry0 > 0)
+                    {
+                      const double my_area = 0.5 * int_rx1 * (1 - int_ry0);
+                      local_area -= (c_values[2] < 0) ? my_area : 1 - my_area;
+                      difference = pos_x1 - pos_y0;
+                      perimeter += difference.norm();
+                      interface_p[0] = pos_x1;
+                      interface_p[1] = pos_y0;
+                      level_set_solver.pcout << "difference = " << difference << "   y0 = " << pos_y0 << "   x1 = " << pos_x1 << std::endl;
+                    }
+                  if (int_ry1 > 0)
+                    {
+                      const double my_area = 0.5 * (1 - int_rx1) * (1 - int_ry1);
+                      local_area -= (c_values[3] < 0) ? my_area : 1 - my_area;
+                      difference = pos_x1 - pos_y1;
+                      perimeter += difference.norm();
+                      interface_p[0] = pos_x1;
+                      interface_p[1] = pos_y1;
+                      level_set_solver.pcout << "difference = " << difference << "   x1 = " << pos_x1 << "   y1 = " << pos_y1 << std::endl;
+                    }
+                }
+              if (int_ry0 > 0 && int_ry1 > 0 && int_rx0 < 0 && int_rx1 < 0)
+                {
+                  const double my_area = 0.5 * (int_ry0 + int_ry1);
+                  local_area -= (c_values[0] < 0) ? my_area : 1 - my_area;
+                  difference = pos_y0 - pos_y1;
+                  perimeter += difference.norm();
+                  interface_p[0] = pos_y0;
+                  interface_p[1] = pos_y1;
+                  level_set_solver.pcout << "difference = " << difference << "   y0 = " << pos_y0 << "   y1 = " << pos_y1 << std::endl;
+                }
+              if (int_rx0 <= 0 && int_rx1 <= 0 && int_ry0 <= 0 && int_ry1 <= 0 &&
+                  c_values[0] <= 0)
+                local_area = 0;
+
+              if (interface_p != Tensor<2, dim>() && interface_points != 0)
+                interface_points->push_back(interface_p);
+
+              Assert(local_area >= 0, ExcMessage("Substracted too much"));
+              for (unsigned int i = 0; i < n_points; ++i)
+                {
+                  double my_area = local_area * quad_weights[i];
+                  area += my_area;
+                  for (unsigned int d = 0; d < dim; ++d)
+                    {
+                      center_of_mass[d] += quad[i][d] * my_area;
+                      velocity[d] += velocities[i][d] * my_area;
+                    }
+                }
+            }
+        }
+
+    const MPI_Comm &mpi_communicator = get_communicator(navier_stokes_solver.get_dof_handler_u().get_triangulation());
+
+    const double global_area      = Utilities::MPI::sum(area, mpi_communicator);
+    const double global_perimeter = Utilities::MPI::sum(perimeter, mpi_communicator);
+    level_set_solver.pcout << "area = " << area << "   perimeter = " << perimeter << std::endl;
+
+    Tensor<1, dim> global_mass_center;
+    Tensor<1, dim> global_velocity;
+
+    for (unsigned int d = 0; d < dim; ++d)
+      {
+        global_velocity[d]    = Utilities::MPI::sum(velocity[d], mpi_communicator);
+        global_mass_center[d] = Utilities::MPI::sum(center_of_mass[d], mpi_communicator);
+        level_set_solver.pcout << "d = " << d << " :   center of mass = " << center_of_mass[d] <<  std::endl;
+      }
+    
+    this->set_adaptive_time_step(global_velocity.norm() / global_area);
+
+    const double circularity = 2. * std::sqrt(global_area * numbers::PI) / global_perimeter;
+    if (navier_stokes_solver.get_parameters().output_verbosity > 0)
+      {
+        const std::size_t old_precision = std::cout.precision();
+        std::cout.precision(8);
+        level_set_solver.pcout << "  Degree of circularity: " << circularity << std::endl;
+        level_set_solver.pcout << "  Mean bubble velocity: ";
+        for (unsigned int d = 0; d < dim; ++d)
+          level_set_solver.pcout << ((std::abs(global_velocity[d]) < 1e-7 * global_velocity.norm()) ?
+                      0. :
+                      (global_velocity[d] / global_area))
+                << "  ";
+        level_set_solver.pcout << std::endl;
+        level_set_solver.pcout << "  Position of the center of mass:  ";
+        for (unsigned int d = 0; d < dim; ++d)
+          level_set_solver.pcout << ((std::abs(global_mass_center[d]) < 1e-7 * global_omega_diameter) ?
+                      0. :
+                      (global_mass_center[d] / global_area))
+                << "  ";
+        level_set_solver.pcout << std::endl;
+        level_set_solver.pcout << "with diameter = " << global_omega_diameter << std::endl;
+
+       std::pair<double, double> concentration = get_concentration_range();
+        level_set_solver.pcout << "  Range of level set values: " << concentration.first << " / "
+              << concentration.second << std::endl;
+  
+        std::cout.precision(old_precision);
+      }
+
+    std::vector<double> data(4 + 2 * dim);
+    data[0] = navier_stokes_solver.time_stepping.now();
+    data[1] = global_area;
+    data[2] = global_perimeter;
+    data[3] = circularity;
+    for (unsigned int d = 0; d < dim; ++d)
+      data[4 + d] = global_velocity[d] / global_area;
+    for (unsigned int d = 0; d < dim; ++d)
+      data[4 + dim + d] = global_mass_center[d] / global_area;
+
+    // get interface points from other processors
+    if (interface_points != 0)
+      {
+        std::vector<unsigned int> receive_count(
+          Utilities::MPI::n_mpi_processes(mpi_communicator));
+
+        unsigned int n_send_elements = interface_points->size();
+
+        MPI_Gather(&n_send_elements,
+                  1,
+                  MPI_UNSIGNED,
+                  &receive_count[0],
+                  1,
+                  MPI_UNSIGNED,
+                  0,
+                  mpi_communicator);
+        for (unsigned int i = 1; i < Utilities::MPI::n_mpi_processes(mpi_communicator); ++i)
+          {
+            // Each processor sends the interface_points he deals with to
+            // processor
+            // 0
+            if (Utilities::MPI::this_mpi_process(mpi_communicator) == i)
+              {
+                // put data into a std::vector<double> to create a data type that
+                // MPI understands
+                std::vector<double> send_data(2 * dim * interface_points->size());
+                for (unsigned int j = 0; j < interface_points->size(); ++j)
+                  for (unsigned int d = 0; d < 2; ++d)
+                    for (unsigned int e = 0; e < dim; ++e)
+                      send_data[j * 2 * dim + d * dim + e] = (*interface_points)[j][d][e];
+                MPI_Send(
+                  &send_data[0], send_data.size(), MPI_DOUBLE, 0, i, mpi_communicator);
+
+                // when we are done with sending, destroy the data on all
+                // processors except processor 0
+                std::vector<Tensor<2, dim>> empty;
+                interface_points->swap(empty);
+              }
+
+            // Processor 0 receives data from the other processors
+            if (Utilities::MPI::this_mpi_process(mpi_communicator) == 0)
+              {
+                std::vector<double> receive_data(2 * dim * receive_count[i]);
+                int                 ierr = MPI_Recv(&receive_data[0],
+                                    receive_data.size(),
+                                    MPI_DOUBLE,
+                                    i,
+                                    i,
+                                    mpi_communicator,
+                                    MPI_STATUSES_IGNORE);
+                (void)ierr;
+                Assert(ierr == MPI_SUCCESS, ExcInternalError());
+                for (unsigned int j = 0; j < receive_count[i]; ++j)
+                  {
+                    Tensor<2, dim> point;
+                    for (unsigned int d = 0; d < 2; ++d)
+                      for (unsigned int e = 0; e < dim; ++e)
+                        point[d][e] = receive_data[j * 2 * dim + d * dim + e];
+                    interface_points->push_back(point);
+                  }
+              }
+          }
+      }
+
+      level_set_solver.pcout << "reach end" <<std::endl;
+
+    return data;
+  }
+
+
 private:
   void
   move_surface_mesh()
@@ -1009,7 +1463,8 @@ private:
         level_set_solver.get_normal_vector(),
         level_set_solver.get_curvature_vector(),
         level_set_solver.get_level_set_vector(),
-        navier_stokes_solver.user_rhs.block(0));
+        navier_stokes_solver.user_rhs.block(0),
+        level_set_solver.pcout);
     else if (!use_auxiliary_surface_mesh && !use_sharp_interface)
       compute_force_vector_regularized(
         level_set_solver.get_matrix_free(),
@@ -1064,12 +1519,38 @@ private:
       zero_out);
   }
 
+  void
+  set_adaptive_time_step(const double norm_velocity) const
+  {
+    // Evaluate the time step according to the stability condition.
+
+    const double cfl       = navier_stokes_solver.get_parameters().time_stepping_cfl;
+    const double rho_2     = navier_stokes_solver.get_parameters().viscosity_diff + navier_stokes_solver.get_parameters().viscosity;
+    const double coef_2    = navier_stokes_solver.get_parameters().time_stepping_coef2;
+    const double sigma_val = navier_stokes_solver.get_parameters().surface_tension;
+
+    double new_time_step =
+      1 /
+      (1 / (cfl * level_set_solver.minimal_edge_length / norm_velocity) +
+      1 / (coef_2 * std::sqrt(rho_2 / sigma_val) * std::pow(level_set_solver.minimal_edge_length, 1.5)));
+
+    // hand this step to the timer stepper. The time stepper will make sure that
+    // the time step does not change too rapidly from one iteration to the next
+    // and also be within the bounds set in the parameter file.
+    navier_stokes_solver.time_stepping.set_time_step(new_time_step);
+  }
+
   const bool use_auxiliary_surface_mesh;
   const bool use_sharp_interface;
+
+  // compute bubble statistics
+  std::pair<double, double> concentration;
+  mutable std::pair<double, double>      last_concentration_range;
   
   // background mesh
   NavierStokes<dim> & navier_stokes_solver;
   LevelSetSolver<dim> level_set_solver;
+  //TwoPhaseBaseAlgorithm<dim> & two_phase_solver;
 
   // surface mesh
   DoFHandler<dim - 1, dim>               euler_dofhandler;

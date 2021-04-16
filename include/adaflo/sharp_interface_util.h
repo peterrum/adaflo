@@ -391,6 +391,8 @@ namespace dealii
         process_lines(table[c]);
       }
 
+     // ConditionalOStream pcout;
+
       const unsigned int  n_subdivisions;
       FEValues<dim>       fe_values;
       std::vector<double> ls_values;
@@ -970,7 +972,8 @@ compute_force_vector_sharp_interface(const Quadrature<dim - 1> &surface_quad,
                                      const BlockVectorType &    normal_vector_field,
                                      const VectorType &         curvature_solution,
                                      const VectorType &         ls_vector,
-                                     VectorType &               force_vector)
+                                     VectorType &               force_vector,
+                                     ConditionalOStream  &      pcout)
                                      
                                      
 {
@@ -993,6 +996,9 @@ compute_force_vector_sharp_interface(const Quadrature<dim - 1> &surface_quad,
   std::vector<double>                  buffer_dim;
   std::vector<types::global_dof_index> local_dof_indices;
 
+  //TODO: remove
+  Vector<double>          sol_values(dof_handler.get_fe().dofs_per_cell);
+
   normal_vector_field.update_ghost_values();
   curvature_solution.update_ghost_values();
   ls_vector.update_ghost_values();
@@ -1001,7 +1007,7 @@ compute_force_vector_sharp_interface(const Quadrature<dim - 1> &surface_quad,
   for (const auto &cell : dof_handler.active_cell_iterators())
     {
       if (cell->is_locally_owned() == false)
-        continue;
+        continue; 
 
       // determine if cell is cut by the interface and if yes, determine the quadrature
       // point location and weight
