@@ -168,7 +168,7 @@ namespace dealii
       const Point<dim> &point)
     {
       boost::geometry::model::d2::point_xy<double> p(point[0], point[1]);
-      // true if geometry1 is completely contained within geometry2, else false 
+      // true if geometry1 is completely contained within geometry2, else false
       return boost::geometry::within(p, polygon);
     }
 
@@ -318,7 +318,7 @@ namespace dealii
                        std::vector<Point<dim>> &         vertices,
                        std::vector<::CellData<dim - 1>> &cells)
       {
-        // cases 0-15 
+        // cases 0-15
         unsigned int c = 0;
 
         for (unsigned int i = 0, scale = 1; i < 4; ++i, scale *= 2)
@@ -363,7 +363,7 @@ namespace dealii
           }
 
         static const unsigned int X = -1;
-        // numbers are edges of square 
+        // numbers are edges of square
         /*   ___3___
             |       |
             0       1
@@ -489,7 +489,7 @@ collect_integration_points(
 
 /**
  * Compute force vector for sharp-interface method (front tracking).
- *   - no level-set. 
+ *   - no level-set.
  *   - two meshs: Interface at codim-1 mesh, NSE at background mesh
  *   - normal and curvature from geometric configuration of surface mesh
  */
@@ -548,7 +548,7 @@ compute_force_vector_sharp_interface(
             for (unsigned int i = 0; i < spacedim; ++i)
               result[i] = -curvature_values[q] * normal_values[q][i] * fe_eval.JxW(q) *
                           surface_tension;
-              // f = kappa * n * JxW * sigma
+            // f = kappa * n * JxW * sigma
             integration_points.push_back(fe_eval.quadrature_point(q));
             integration_values.push_back(result);
           }
@@ -589,14 +589,16 @@ compute_force_vector_sharp_interface(
 
       // integrate values with test function and store in buffer
       phi_normal_force.integrate(cell, unit_points, buffer, EvaluationFlags::values);
-      //local buffer into global force vector
+      // local buffer into global force vector
       constraints.distribute_local_to_global(buffer, local_dof_indices, force_vector);
     }
 }
 
 
-// routine to compute normal from actual interface at surface mesh
-// for front-tracking method
+/**
+ * routine to compute normal from actual interface at surface mesh
+ * for front-tracking method
+ */
 template <int dim, int spacedim, typename VectorType>
 void
 compute_normal(const Mapping<dim, spacedim> &   mapping,
@@ -632,8 +634,10 @@ compute_normal(const Mapping<dim, spacedim> &   mapping,
 }
 
 
-// routine to compute curvature from actual interface at surface mesh
-// for front-tracking method
+/**
+ * routine to compute curvature from actual interface at surface mesh
+ * for front-tracking method
+ */
 template <int dim, int spacedim, typename VectorType>
 void
 compute_curvature(const Mapping<dim, spacedim> &   mapping,
@@ -687,8 +691,9 @@ compute_curvature(const Mapping<dim, spacedim> &   mapping,
 }
 
 
-
-// used for mixed level set method
+/**
+ * used for mixed level set method
+ */
 template <int dim, int spacedim>
 std::tuple<std::vector<std::pair<int, int>>,
            std::vector<unsigned int>,
@@ -780,9 +785,10 @@ collect_evaluation_points(const Triangulation<dim, spacedim> &     surface_mesh,
 
 /**
  * Compute force vector for sharp-interface method (mixed level set).
-  *   - background mesh at which NS and level set is solved
+ *   - background mesh at which NS and level set is solved
  *    - normal and curvature from level set are used for interface
- *    - surface mesh is for codim1 Interface, to determine quadrature point, moved with velocity from NSE
+ *    - surface mesh is for codim1 Interface, to determine quadrature point, moved with
+ *        velocity from NSE
  */
 template <int dim, int spacedim, typename VectorType, typename BlockVectorType>
 void
@@ -960,7 +966,8 @@ compute_force_vector_sharp_interface(const Triangulation<dim, spacedim> &surface
  * sharp level set
  *    - only one mesh for NS and level set
  *    - interface is calculated with normal and curvature from level set
- *    - Marching square/cube algorithm is used to generate interface contour in cells which are cut by interface
+ *    - Marching square/cube algorithm is used to generate interface contour in cells
+ * which are cut by interface
  */
 template <int dim, typename VectorType, typename BlockVectorType>
 void
@@ -972,10 +979,7 @@ compute_force_vector_sharp_interface(const Quadrature<dim - 1> &surface_quad,
                                      const BlockVectorType &    normal_vector_field,
                                      const VectorType &         curvature_solution,
                                      const VectorType &         ls_vector,
-                                     VectorType &               force_vector,
-                                     ConditionalOStream  &      pcout)
-                                     
-                                     
+                                     VectorType &               force_vector)
 {
   const unsigned int                        n_subdivisions = 3;
   GridGenerator::MarchingCubeAlgorithm<dim> mc(mapping,
