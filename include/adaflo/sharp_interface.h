@@ -288,8 +288,8 @@ public:
       epsilon_used =
         parameters.epsilon / parameters.concentration_subdivisions * epsilon_used;
 
-      pcout << "epsilon_used: " << epsilon_used << " epsilon_input: " 
-            << parameters.epsilon << std::endl;
+      pcout << "epsilon_used: " << epsilon_used
+            << " epsilon_input: " << parameters.epsilon << std::endl;
 
       initialize_mass_matrix_diagonal(
         matrix_free, hanging_node_constraints, dof_index_ls, quad_index, preconditioner);
