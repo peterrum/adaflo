@@ -927,7 +927,7 @@ compute_force_vector_sharp_interface(const Triangulation<dim, spacedim> &surface
           {
             Assert(phi_normal.get_value(q).norm() > 0, ExcNotImplemented());
             const auto normal = phi_normal.get_value(q) / phi_normal.get_value(q).norm();
-            phi_force.submit_value(surface_tension * surface_tension * normal *
+            phi_force.submit_value(surface_tension * normal *
                                      phi_curvature.get_value(q) * JxW[q],
                                    q);
           }
