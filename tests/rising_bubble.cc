@@ -121,8 +121,11 @@ void
 MicroFluidicProblem<dim>::run()
 {
   // create mesh
-  std::vector<unsigned int> subdivisions(dim, 5);
-  subdivisions[dim - 1] = 10;
+  //ToDo: Change back inital subdivision, just for comparison terms
+  std::vector<unsigned int> subdivisions(dim, 15);
+  subdivisions[dim - 1] = 30;
+  //std::vector<unsigned int> subdivisions(dim, 5);
+  //subdivisions[dim - 1] = 10;
 
   const Point<dim> bottom_left;
   const Point<dim> top_right = (dim == 2 ? Point<dim>(1, 2) : Point<dim>(1, 1, 2));
