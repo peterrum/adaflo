@@ -1444,8 +1444,7 @@ private:
         level_set_solver.get_normal_vector(),
         level_set_solver.get_curvature_vector(),
         level_set_solver.get_level_set_vector(),
-        navier_stokes_solver.user_rhs.block(0),
-        level_set_solver.pcout);
+        navier_stokes_solver.user_rhs.block(0));
     else if (!use_auxiliary_surface_mesh && !use_sharp_interface)
       compute_force_vector_regularized(
         level_set_solver.get_matrix_free(),
