@@ -249,7 +249,7 @@ MicroFluidicProblem<dim>::run()
 
   Triangulation<dim - 1, dim> surface_mesh;
   GridGenerator::hyper_sphere(surface_mesh, Point<dim>(0.5, 0.5), 0.25);
-  surface_mesh.refine_global(5);
+  surface_mesh.refine_global(10); //5
 
   typename parallel::distributed::Triangulation<dim>::active_cell_iterator
     cell = triangulation.begin(),
