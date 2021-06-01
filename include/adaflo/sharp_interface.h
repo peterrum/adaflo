@@ -18,11 +18,12 @@
 
 #include <deal.II/dofs/dof_renumbering.h>
 
-#include <deal.II/fe/fe_point_evaluation.h>
 #include <deal.II/fe/fe_q_iso_q1.h>
 #include <deal.II/fe/mapping_fe_field.h>
 
 #include <deal.II/grid/grid_tools_cache.h>
+
+#include <deal.II/matrix_free/fe_point_evaluation.h>
 
 #include <deal.II/numerics/vector_tools.h>
 
@@ -287,8 +288,8 @@ public:
       epsilon_used =
         parameters.epsilon / parameters.concentration_subdivisions * epsilon_used;
 
-      pcout << "epsilon_used: " << epsilon_used << " epsilon_input: " 
-            << parameters.epsilon << std::endl;
+      pcout << "epsilon_used: " << epsilon_used
+            << " epsilon_input: " << parameters.epsilon << std::endl;
 
       initialize_mass_matrix_diagonal(
         matrix_free, hanging_node_constraints, dof_index_ls, quad_index, preconditioner);
@@ -311,7 +312,7 @@ public:
 
 
     // transform_distance_function
-    for (unsigned int i = 0; i < ls_solution.local_size(); i++)
+    for (unsigned int i = 0; i < ls_solution.locally_owned_size(); i++)
       ls_solution.local_element(i) =
         -std::tanh(ls_solution.local_element(i) / (2. * epsilon_used));
 
@@ -587,15 +588,14 @@ public:
     {
       DataOutBase::VtkFlags flags;
 
-      DataOut<dim - 1, DoFHandler<dim - 1, dim>> data_out;
+      DataOut<dim - 1, dim> data_out;
       data_out.set_flags(flags);
       data_out.add_data_vector(surface_dofhandler, curvature_vector, "curvature");
       data_out.add_data_vector(surface_dofhandler_dim, normal_vector, "normal");
 
-      data_out.build_patches(
-        *euler_mapping,
-        surface_dofhandler_dim.get_fe().degree + 1,
-        DataOut<dim - 1, DoFHandler<dim - 1, dim>>::CurvedCellRegion::curved_inner_cells);
+      data_out.build_patches(*euler_mapping,
+                             surface_dofhandler_dim.get_fe().degree + 1,
+                             DataOut<dim - 1, dim>::CurvedCellRegion::curved_inner_cells);
 
       std::filesystem::path path(output_filename + "_surface");
 
@@ -893,15 +893,14 @@ public:
       {
         DataOutBase::VtkFlags flags;
 
-        DataOut<dim - 1, DoFHandler<dim - 1, dim>> data_out;
+        DataOut<dim - 1, dim> data_out;
         data_out.set_flags(flags);
         data_out.attach_dof_handler(euler_dofhandler);
 
         data_out.build_patches(
           *euler_mapping,
           euler_dofhandler.get_fe().degree + 1,
-          DataOut<dim - 1,
-                  DoFHandler<dim - 1, dim>>::CurvedCellRegion::curved_inner_cells);
+          DataOut<dim - 1, dim>::CurvedCellRegion::curved_inner_cells);
 
         std::filesystem::path path(output_filename + "_surface");
 

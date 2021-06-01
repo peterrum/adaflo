@@ -20,13 +20,14 @@
 #include <deal.II/base/mpi_remote_point_evaluation.h>
 
 #include <deal.II/fe/fe_nothing.h>
-#include <deal.II/fe/fe_point_evaluation.h>
 #include <deal.II/fe/fe_q_iso_q1.h>
 #include <deal.II/fe/mapping_fe_field.h>
 
+#include <deal.II/grid/grid_tools.h>
 #include <deal.II/grid/grid_tools_cache.h>
 
 #include <deal.II/matrix_free/fe_evaluation.h>
+#include <deal.II/matrix_free/fe_point_evaluation.h>
 
 #include <deal.II/numerics/vector_tools.h>
 #include <deal.II/numerics/vector_tools_evaluate.h>
@@ -85,11 +86,11 @@ namespace dealii
       Utilities::MPI::RemotePointEvaluation<spacedim, spacedim> cache;
 
       const auto evaluation_values =
-        VectorTools::evaluate_at_points<spacedim>(background_mapping,
-                                                  background_dofhandler,
-                                                  velocity_vector,
-                                                  evaluation_points,
-                                                  cache);
+        VectorTools::point_values<spacedim>(background_mapping,
+                                            background_dofhandler,
+                                            velocity_vector,
+                                            evaluation_points,
+                                            cache);
 
       unsigned int counter = 0;
 
@@ -230,173 +231,6 @@ namespace dealii
       }
     }
   } // namespace GridTools
-
-  namespace GridGenerator
-  {
-    template <int dim>
-    class MarchingCubeAlgorithm
-    {
-    public:
-      MarchingCubeAlgorithm(const Mapping<dim, dim> &      mapping,
-                            const FiniteElement<dim, dim> &fe,
-                            const unsigned int             n_subdivisions)
-        : n_subdivisions(n_subdivisions)
-        , fe_values(mapping,
-                    fe,
-                    create_qudrature_rule(n_subdivisions),
-                    update_values | update_quadrature_points)
-        , ls_values(fe_values.n_quadrature_points)
-      {
-        AssertDimension(dim, 2);
-      }
-
-      template <typename CellType, typename VectorType>
-      void
-      process_cell(const CellType &                  cell,
-                   const VectorType &                ls_vector,
-                   std::vector<Point<dim>> &         vertices,
-                   std::vector<::CellData<dim - 1>> &cells)
-      {
-        fe_values.reinit(cell);
-        fe_values.get_function_values(ls_vector, ls_values);
-
-        for (unsigned int j = 0; j < n_subdivisions; ++j)
-          for (unsigned int i = 0; i < n_subdivisions; ++i)
-            {
-              std::vector<unsigned int> mask{(n_subdivisions + 1) * (j + 0) + (i + 0),
-                                             (n_subdivisions + 1) * (j + 0) + (i + 1),
-                                             (n_subdivisions + 1) * (j + 1) + (i + 1),
-                                             (n_subdivisions + 1) * (j + 1) + (i + 0),
-                                             (n_subdivisions + 1) * (n_subdivisions + 1) +
-                                               (n_subdivisions * j + i)};
-
-              process_sub_cell(
-                ls_values, fe_values.get_quadrature_points(), mask, vertices, cells);
-            }
-      }
-
-    private:
-      static Quadrature<dim>
-      create_qudrature_rule(const unsigned int n_subdivisions)
-      {
-         /** Example: n_subdivisions = 2
-         *
-         *  x,y in [0,1]x[0,1]
-         *
-         *      ^
-         *    y |
-         *
-         *     (6)   (7)    (8)
-         *      +_____+_____+
-         *      | (11) (12) |
-         *      |  * (4) *  |
-         *   (3)+     +     +(5)
-         *      | (9)  (10) |
-         *      |  *     *  |
-         *      +_____+_____+ --> x
-         *      (0)   (1)  (2)
-         */
-        std::vector<Point<dim>> quadrature_points;
-
-        for (unsigned int j = 0; j <= n_subdivisions; ++j)
-          for (unsigned int i = 0; i <= n_subdivisions; ++i)
-            quadrature_points.emplace_back(1.0 / n_subdivisions * i,
-                                           1.0 / n_subdivisions * j);
-
-        for (unsigned int j = 0; j < n_subdivisions; ++j)
-          for (unsigned int i = 0; i < n_subdivisions; ++i)
-            quadrature_points.emplace_back(1.0 / n_subdivisions * (i + 0.5),
-                                           1.0 / n_subdivisions * (j + 0.5));
-
-        return {quadrature_points};
-      }
-
-      static void
-      process_sub_cell(const std::vector<double> &       ls_values,
-                       const std::vector<Point<dim>> &   points,
-                       const std::vector<unsigned int>   mask,
-                       std::vector<Point<dim>> &         vertices,
-                       std::vector<::CellData<dim - 1>> &cells)
-      {
-        // cases 0-15 
-        unsigned int c = 0;
-
-        for (unsigned int i = 0, scale = 1; i < 4; ++i, scale *= 2)
-          c += (ls_values[mask[i]] > 0) * scale;
-
-        if (c == 0 || c == 15)
-          return; // nothing to do since the level set function is constant within the
-                  // sub_cell
-
-        const auto process_points = [&](const auto &lines) {
-          const double w0 = std::abs(ls_values[mask[lines[0]]]);
-          const double w1 = std::abs(ls_values[mask[lines[1]]]);
-
-          return points[mask[lines[0]]] * (w1 / (w0 + w1)) +
-                 points[mask[lines[1]]] * (w0 / (w0 + w1));
-        };
-        
-        const auto process_lines = [&](const auto &lines) {
-          std::array<std::array<unsigned int, 2>, 4> table{
-            {{{0, 3}}, {{1, 2}}, {{0, 1}}, {{3, 2}}}};
-
-          const auto p0 = process_points(table[lines[0]]);
-          const auto p1 = process_points(table[lines[1]]);
-
-          cells.resize(cells.size() + 1);
-          cells.back().vertices[0] = vertices.size();
-          cells.back().vertices[1] = vertices.size() + 1;
-
-          vertices.emplace_back(p0);
-          vertices.emplace_back(p1);
-        };
-
-         // Check if the isoline for level set values larger than zero is the element's
-        // diagonal and level set values on both sides from the diagonal are smaller than
-        // zero. In this case, the level set would be a "hat"-function which does not make
-        // sense.
-        if (c == 5 || c == 10)
-          {
-            // cases with two contour lines in cell
-            Assert(false, ExcNotImplemented());
-            return;
-          }
-
-        static const unsigned int X = -1;
-        // numbers are edges of square 
-        /*   ___3___
-            |       |
-            0       1
-            |___2___|
-        */
-        std::array<std::array<unsigned int, 2>, 16> table{{
-          {{X, X}},
-          {{0, 2}},
-          {{1, 2}},
-          {{0, 1}}, //  0- 3
-          {{1, 3}},
-          {{X, X}},
-          {{2, 3}},
-          {{0, 3}}, //  4- 7
-          {{0, 3}},
-          {{2, 3}},
-          {{X, X}},
-          {{1, 3}}, //  8-11
-          {{0, 1}},
-          {{2, 1}},
-          {{0, 2}},
-          {{X, X}} // 12-15
-        }};
-
-        process_lines(table[c]);
-      }
-
-      const unsigned int  n_subdivisions;
-      FEValues<dim>       fe_values;
-      std::vector<double> ls_values;
-    };
-  } // namespace GridGenerator
-
 } // namespace dealii
 
 
@@ -487,7 +321,7 @@ collect_integration_points(
 
 /**
  * Compute force vector for sharp-interface method (front tracking).
- *   - no level-set. 
+ *   - no level-set.
  *   - two meshs: Interface at codim-1 mesh, NSE at background mesh
  *   - normal and curvature from geometric configuration of surface mesh
  */
@@ -546,7 +380,7 @@ compute_force_vector_sharp_interface(
             for (unsigned int i = 0; i < spacedim; ++i)
               result[i] = -curvature_values[q] * normal_values[q][i] * fe_eval.JxW(q) *
                           surface_tension;
-              // f = kappa * n * JxW * sigma
+            // f = kappa * n * JxW * sigma
             integration_points.push_back(fe_eval.quadrature_point(q));
             integration_values.push_back(result);
           }
@@ -558,7 +392,9 @@ compute_force_vector_sharp_interface(
 
   AffineConstraints<double> constraints; // TODO: use the right ones
 
-  FEPointEvaluation<spacedim, spacedim> phi_normal_force(mapping, dof_handler.get_fe());
+  FEPointEvaluation<spacedim, spacedim> phi_normal_force(mapping,
+                                                         dof_handler.get_fe(),
+                                                         update_values);
 
   std::vector<double>                  buffer;
   std::vector<types::global_dof_index> local_dof_indices;
@@ -582,19 +418,23 @@ compute_force_vector_sharp_interface(
       const ArrayView<const Tensor<1, spacedim, double>> JxW(weights.data() + ptrs[i],
                                                              n_points);
 
+      phi_normal_force.reinit(cell, unit_points);
+
       for (unsigned int q = 0; q < n_points; ++q)
         phi_normal_force.submit_value(JxW[q], q);
 
       // integrate values with test function and store in buffer
-      phi_normal_force.integrate(cell, unit_points, buffer, EvaluationFlags::values);
-      //local buffer into global force vector
+      phi_normal_force.integrate(buffer, EvaluationFlags::values);
+      // local buffer into global force vector
       constraints.distribute_local_to_global(buffer, local_dof_indices, force_vector);
     }
 }
 
 
-// routine to compute normal from actual interface at surface mesh
-// for front-tracking method
+/**
+ * routine to compute normal from actual interface at surface mesh
+ * for front-tracking method
+ */
 template <int dim, int spacedim, typename VectorType>
 void
 compute_normal(const Mapping<dim, spacedim> &   mapping,
@@ -630,8 +470,10 @@ compute_normal(const Mapping<dim, spacedim> &   mapping,
 }
 
 
-// routine to compute curvature from actual interface at surface mesh
-// for front-tracking method
+/**
+ * routine to compute curvature from actual interface at surface mesh
+ * for front-tracking method
+ */
 template <int dim, int spacedim, typename VectorType>
 void
 compute_curvature(const Mapping<dim, spacedim> &   mapping,
@@ -685,8 +527,9 @@ compute_curvature(const Mapping<dim, spacedim> &   mapping,
 }
 
 
-
-// used for mixed level set method
+/**
+ * used for mixed level set method
+ */
 template <int dim, int spacedim>
 std::tuple<std::vector<std::pair<int, int>>,
            std::vector<unsigned int>,
@@ -778,9 +621,10 @@ collect_evaluation_points(const Triangulation<dim, spacedim> &     surface_mesh,
 
 /**
  * Compute force vector for sharp-interface method (mixed level set).
-  *   - background mesh at which NS and level set is solved
+ *   - background mesh at which NS and level set is solved
  *    - normal and curvature from level set are used for interface
- *    - surface mesh is for codim1 Interface, to determine quadrature point, moved with velocity from NSE
+ *    - surface mesh is for codim1 Interface, to determine quadrature point, moved with
+ * velocity from NSE
  */
 template <int dim, int spacedim, typename VectorType, typename BlockVectorType>
 void
@@ -845,11 +689,15 @@ compute_force_vector_sharp_interface(const Triangulation<dim, spacedim> &surface
   const auto integration_function = [&](const auto &values, const auto &cell_data) {
     AffineConstraints<double> constraints; // TODO: use the right ones
 
-    FEPointEvaluation<1, spacedim> phi_curvature(mapping, dof_handler.get_fe());
+    FEPointEvaluation<1, spacedim> phi_curvature(mapping,
+                                                 dof_handler.get_fe(),
+                                                 update_values);
 
     FESystem<spacedim>                    fe_dim(dof_handler.get_fe(), spacedim);
-    FEPointEvaluation<spacedim, spacedim> phi_normal(mapping, fe_dim);
-    FEPointEvaluation<spacedim, spacedim> phi_force(mapping, dof_handler_dim.get_fe());
+    FEPointEvaluation<spacedim, spacedim> phi_normal(mapping, fe_dim, update_values);
+    FEPointEvaluation<spacedim, spacedim> phi_force(mapping,
+                                                    dof_handler_dim.get_fe(),
+                                                    update_values);
 
     std::vector<double>                  buffer;
     std::vector<double>                  buffer_dim;
@@ -877,6 +725,10 @@ compute_force_vector_sharp_interface(const Triangulation<dim, spacedim> &surface
                                      cell_data.reference_point_ptrs[i + 1] -
                                        cell_data.reference_point_ptrs[i]);
 
+        phi_curvature.reinit(cell, unit_points);
+        phi_normal.reinit(cell, unit_points);
+        phi_force.reinit(cell, unit_points);
+
         // gather_evaluate curvature
         {
           local_dof_indices.resize(cell->get_fe().n_dofs_per_cell());
@@ -889,10 +741,7 @@ compute_force_vector_sharp_interface(const Triangulation<dim, spacedim> &surface
                                      buffer.begin(),
                                      buffer.end());
 
-          phi_curvature.evaluate(cell,
-                                 unit_points,
-                                 make_array_view(buffer),
-                                 EvaluationFlags::values);
+          phi_curvature.evaluate(make_array_view(buffer), EvaluationFlags::values);
         }
 
         // gather_evaluate normal
@@ -908,10 +757,7 @@ compute_force_vector_sharp_interface(const Triangulation<dim, spacedim> &surface
                 buffer_dim[fe_dim.component_to_system_index(i, c)] = buffer[c];
             }
 
-          phi_normal.evaluate(cell,
-                              unit_points,
-                              make_array_view(buffer_dim),
-                              EvaluationFlags::values);
+          phi_normal.evaluate(make_array_view(buffer_dim), EvaluationFlags::values);
         }
 
         // perform operation at quadrature points
@@ -929,7 +775,7 @@ compute_force_vector_sharp_interface(const Triangulation<dim, spacedim> &surface
           buffer_dim.resize(dof_handler_dim.get_fe().n_dofs_per_cell());
           local_dof_indices.resize(dof_handler_dim.get_fe().n_dofs_per_cell());
 
-          phi_force.integrate(cell, unit_points, buffer_dim, EvaluationFlags::values);
+          phi_force.integrate(buffer_dim, EvaluationFlags::values);
 
           cell_dim->get_dof_indices(local_dof_indices);
 
@@ -958,7 +804,8 @@ compute_force_vector_sharp_interface(const Triangulation<dim, spacedim> &surface
  * sharp level set
  *    - only one mesh for NS and level set
  *    - interface is calculated with normal and curvature from level set
- *    - Marching square/cube algorithm is used to generate interface contour in cells which are cut by interface
+ *    - Marching square/cube algorithm is used to generate interface contour in cells
+ * which are cut by interface
  */
 template <int dim, typename VectorType, typename BlockVectorType>
 void
@@ -971,22 +818,25 @@ compute_force_vector_sharp_interface(const Quadrature<dim - 1> &surface_quad,
                                      const VectorType &         curvature_solution,
                                      const VectorType &         ls_vector,
                                      VectorType &               force_vector)
-                                     
-                                     
+
+
 {
-  const unsigned int                        n_subdivisions = 3;
-  GridGenerator::MarchingCubeAlgorithm<dim> mc(mapping,
-                                               dof_handler.get_fe(),
-                                               n_subdivisions);
+  const unsigned int                                n_subdivisions = 3;
+  GridTools::MarchingCubeAlgorithm<dim, VectorType> mc(mapping,
+                                                       dof_handler.get_fe(),
+                                                       n_subdivisions);
 
   AffineConstraints<double> constraints; // TODO: use the right ones
 
-  FEPointEvaluation<1, dim> phi_curvature(mapping, dof_handler.get_fe());
+  FEPointEvaluation<1, dim> phi_curvature(mapping, dof_handler.get_fe(), update_values);
 
   FESystem<dim>               fe_dim(dof_handler.get_fe(), dim);
-  FEPointEvaluation<dim, dim> phi_normal(mapping, fe_dim);
-  FEPointEvaluation<dim, dim> phi_force(mapping, dof_handler_dim.get_fe());
- 
+  FEPointEvaluation<dim, dim> phi_normal(mapping, fe_dim, update_values);
+  FEPointEvaluation<dim, dim> phi_force(mapping,
+                                        dof_handler_dim.get_fe(),
+                                        update_values,
+                                        update_values);
+
   std::vector<double>                  buffer;
   std::vector<double>                  buffer_dim;
   std::vector<types::global_dof_index> local_dof_indices;
@@ -1010,7 +860,7 @@ compute_force_vector_sharp_interface(const Quadrature<dim - 1> &surface_quad,
         std::vector<::CellData<dim - 1>> surface_cells;
 
         // run square/cube marching algorithm
-        mc.process_cell(cell, ls_vector, surface_vertices, surface_cells);
+        mc.process_cell(cell, ls_vector, 0.0, surface_vertices, surface_cells);
 
         if (surface_vertices.size() == 0)
           return {}; // cell is not cut by interface -> no quadrature points have the be
@@ -1063,6 +913,10 @@ compute_force_vector_sharp_interface(const Quadrature<dim - 1> &surface_quad,
       const ArrayView<const Point<dim>> unit_points(points.data(), n_points);
       const ArrayView<const double>     JxW(weights.data(), n_points);
 
+      phi_curvature.reinit(cell, unit_points);
+      phi_normal.reinit(cell, unit_points);
+      phi_force.reinit(cell, unit_points);
+
       // gather curvature
       constraints.get_dof_values(curvature_solution,
                                  local_dof_indices.begin(),
@@ -1070,10 +924,7 @@ compute_force_vector_sharp_interface(const Quadrature<dim - 1> &surface_quad,
                                  buffer.end());
 
       // evaluate curvature
-      phi_curvature.evaluate(cell,
-                             unit_points,
-                             make_array_view(buffer),
-                             EvaluationFlags::values);
+      phi_curvature.evaluate(make_array_view(buffer), EvaluationFlags::values);
 
       // gather normal
       for (int i = 0; i < dim; ++i)
@@ -1087,8 +938,8 @@ compute_force_vector_sharp_interface(const Quadrature<dim - 1> &surface_quad,
         }
 
       // evaluate normal
-      phi_normal.evaluate(cell, unit_points, buffer_dim, EvaluationFlags::values);
-      
+      phi_normal.evaluate(buffer_dim, EvaluationFlags::values);
+
       // quadrature loop
       for (unsigned int q = 0; q < n_points; ++q)
         {
@@ -1103,7 +954,7 @@ compute_force_vector_sharp_interface(const Quadrature<dim - 1> &surface_quad,
       local_dof_indices.resize(dof_handler_dim.get_fe().n_dofs_per_cell());
 
       // integrate force
-      phi_force.integrate(cell, unit_points, buffer_dim, EvaluationFlags::values);
+      phi_force.integrate(buffer_dim, EvaluationFlags::values);
 
       cell_dim->get_dof_indices(local_dof_indices);
 
