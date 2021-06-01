@@ -79,8 +79,8 @@ namespace dealii
 
       Vector<double>                       temp;
       std::vector<types::global_dof_index> temp_dof_indices;
-      //for RK4
-      //const VectorType
+      
+      //for RK4 method
       Vector<double>                     velocity_half_dt, velocity_half_dt_x_old;
       Vector<double>                     pos_old, pos_old_old;
       double                             K1, K2, K3, K4;
@@ -100,7 +100,7 @@ namespace dealii
         }
 
 
-      //TODO: fe_eval_old???
+      //TODO: fe_eval_old for surface mesh at old timestep???
       for (const auto &cell : euler_dofhandler.active_cell_iterators())
         {
           fe_eval.reinit(cell);
@@ -126,7 +126,7 @@ namespace dealii
                                                   evaluation_points,
                                                   cache);
 
-      /*const auto evaluation_values_t_old_x_old =
+      const auto evaluation_values_t_old_x_old =
         VectorTools::evaluate_at_points<spacedim>(background_mapping,
                                                   background_dofhandler,
                                                   velocity_vector_old,
@@ -139,7 +139,7 @@ namespace dealii
                                                   velocity_vector,
                                                   evaluation_points_old,
                                                   cache);   
-      */
+      
       unsigned int counter = 0;
 
       for (const auto &cell : euler_dofhandler.active_cell_iterators())
@@ -153,15 +153,15 @@ namespace dealii
 
           cell->get_dof_indices(temp_dof_indices);
           cell->get_dof_values(euler_coordinates_vector, temp);
-          //cell->get_dof_values(euler_coordinates_vector_old, pos_old);
-          //cell->get_dof_values(euler_coordinates_vector_old_old, pos_old_old);
+          cell->get_dof_values(euler_coordinates_vector_old, pos_old);
+          cell->get_dof_values(euler_coordinates_vector_old_old, pos_old_old);
 
           for (const auto q : fe_eval.quadrature_point_indices())
             {
                const auto velocity = evaluation_values[counter];
-              // const auto velocity_t_old = evaluation_values_t_old[counter];
-              // const auto velocity_t_old_x_old = evaluation_values_t_old_x_old[counter];
-              // const auto velocity_x_old = evaluation_values_x_old[counter];
+               const auto velocity_t_old = evaluation_values_t_old[counter];
+               const auto velocity_t_old_x_old = evaluation_values_t_old_x_old[counter];
+               const auto velocity_x_old = evaluation_values_x_old[counter];
                
               counter = counter +1;
 
@@ -169,21 +169,21 @@ namespace dealii
                 {
                   const auto i =
                     euler_dofhandler.get_fe().component_to_system_index(comp, q);
-               /*
+               
                 //TODO: Implement RK4 method to get new postition
                   K1 = velocity_t_old[comp];
                   // v(t_i+dt, x_i) = 1/2*(v(t_i,x_i)+v(t_i-1,x_i))
                   velocity_half_dt[comp] = 1/2*(velocity_t_old[comp] + velocity[comp]);
                   // v(t_i+dt, x_i-1) = 1/2*(v(t_i,x_i-1)+v(t_i-1,x_i-1))
                   velocity_half_dt_x_old[comp] = 1/2*(velocity_t_old_x_old[comp] + velocity_x_old[comp]);
-                  //K2 = linear_extrapolation(fe_eval.quadrature_point(q)[comp] + dt/2*K1);
+                  
                   K2 = velocity_half_dt[comp] + (velocity_half_dt[comp] - velocity_half_dt_x_old[comp])/(pos_old[i] - pos_old_old[i]) * (fe_eval.quadrature_point(q)[comp] + dt/2*K1 - pos_old[i]);
                   K3 = velocity_half_dt[comp] + (velocity_half_dt[comp] - velocity_half_dt_x_old[comp])/(pos_old[i] - pos_old_old[i]) * (fe_eval.quadrature_point(q)[comp] + dt/2*K2 - pos_old[i]);
                   K4 = velocity[comp] + (velocity[comp] - velocity_x_old[comp])/(pos_old[i] - pos_old_old[i]) * (fe_eval.quadrature_point(q)[comp] + dt/2*K3 - pos_old[i]); 
                   temp[i] = fe_eval.quadrature_point(q)[comp] + dt*(K1 + 2*K2 + K3 + K4)/6;
-                */
+                
                 // old variant: explicit Euler
-                  temp[i] = fe_eval.quadrature_point(q)[comp] + dt * velocity[comp];
+                //  temp[i] = fe_eval.quadrature_point(q)[comp] + dt * velocity[comp];
                 }
             }
 
@@ -221,16 +221,15 @@ namespace dealii
 
       auto euler_coordinates_vector_temp = euler_coordinates_vector;
 
-      //velocity_vector.update_ghost_values();
+      // velocity_vector.update_ghost_values();
       levelset_vector.update_ghost_values();
       normal_vector.update_ghost_values();
 
       std::vector<Point<spacedim>> evaluation_points;
-      std::cout << "before for loop" << std::endl;
+
       // iteration of prolongation
       for (int j = 0; j < 1; j++)
         {
-          std::cout << "iteration for loop" << std::endl;
           for (const auto &cell : euler_dofhandler.active_cell_iterators())
             {
               fe_eval.reinit(cell);
@@ -241,13 +240,13 @@ namespace dealii
 
           Utilities::MPI::RemotePointEvaluation<spacedim, spacedim> cache;
 
-          const auto evaluation_values =
+         /* const auto evaluation_values =
             VectorTools::evaluate_at_points<spacedim>(background_mapping,
                                                       background_dofhandler_dim,
                                                       velocity_vector,
                                                       evaluation_points,
                                                       cache);
-          
+          */
           const auto evaluation_values_ls = 
             VectorTools::evaluate_at_points<spacedim>(background_mapping,
                                                       background_dofhandler,
@@ -285,7 +284,6 @@ namespace dealii
 
           for (const auto &cell : euler_dofhandler.active_cell_iterators())
             {
-              std::cout << "active cell for loop" << std::endl;
               fe_eval.reinit(cell);
 
               temp.reinit(fe_eval.dofs_per_cell);
@@ -298,18 +296,20 @@ namespace dealii
 
               for (const auto q : fe_eval.quadrature_point_indices())
                 {
-                  std::cout << "quad for loop" << std::endl;
-                  const auto velocity = evaluation_values[counter];
+                  //const auto velocity = evaluation_values[counter];
                   const auto phi = evaluation_values_ls[counter];
                   const auto normal_0 = evaluation_values_normal_dim_0[counter];
                   const auto normal_1 = evaluation_values_normal_dim_1[counter];
-                  //const auto normal_2 = evaluation_values_normal_dim_2[counter++];
-                  //TODO: normalize normal vector??
-                  const auto normal_normalized_0 = normal_0[q]/(std::sqrt(normal_0[q]*normal_0[q] + normal_1[q]*normal_1[q]));
-                  const auto normal_normalized_1 = normal_1[q]/(std::sqrt(normal_0[q]*normal_0[q] + normal_1[q]*normal_1[q]));
+                  // normalize normal vector
+                  auto normal_normalized_0 = normal_0[q];
+                  auto normal_normalized_1 = normal_1[q];
+                  if(normal_0[q] != 0 && normal_1[q] != 0)
+                  {
+                    normal_normalized_0 = normal_0[q]/(std::sqrt(normal_0[q]*normal_0[q] + normal_1[q]*normal_1[q]));
+                    normal_normalized_1 = normal_1[q]/(std::sqrt(normal_0[q]*normal_0[q] + normal_1[q]*normal_1[q]));
+                  }
                   for (unsigned int comp = 0; comp < spacedim; ++comp)
                     {
-                      std::cout << "for loop" << std::endl;
                       //normal[comp] = evaluation_values_normal_dim[comp][counter++];
                       const auto i =
                         euler_dofhandler.get_fe().component_to_system_index(comp, q);
@@ -322,14 +322,14 @@ namespace dealii
                           << "  normalized 1 = " << normal_normalized_1 << std::endl;
                         
                         if(comp == 0){
-                          temp[i] = fe_eval.quadrature_point(q)[comp] + normal_normalized_0 * phi[q];
+                          temp[i] = fe_eval.quadrature_point(q)[comp] + 0.1* normal_normalized_0 * phi[q];
                         }else if(comp == 1){
-                          temp[i] = fe_eval.quadrature_point(q)[comp] + normal_normalized_1 * phi[q];
+                          temp[i] = fe_eval.quadrature_point(q)[comp] + 0.1* normal_normalized_1 * phi[q];
                         }else{
                           std::cout << "I do not understand!" << std::endl;
                         }
                         std::cout << "temp = " << temp[i] << std::endl;
-                        // save old ls_value to decide if another iteration is necessary by sign comparing?
+                        //TODO: save old ls_value to decide if another iteration is necessary by sign comparing?
                         //const auto phi_old = phi;
                       }else{
                         std::cout << "else" << std::endl;
