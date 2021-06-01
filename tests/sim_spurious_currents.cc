@@ -116,26 +116,17 @@ MicroFluidicProblem<dim>::MicroFluidicProblem(const TwoPhaseParameters &paramete
 
 template <int dim>
 void
-<<<<<<< HEAD:tests/sharp_interfaces_06.cc
-MicroFluidicProblem<dim>::evaluate_spurious_velocities(NavierStokes<dim> &navier_stokes_solver)
-=======
 MicroFluidicProblem<dim>::evaluate_spurious_velocities(
   NavierStokes<dim> &navier_stokes_solver)
->>>>>>> upstream/master:tests/sim_spurious_currents.cc
 {
   double               local_norm_velocity, norm_velocity;
   const QIterated<dim> quadrature_formula(QTrapez<1>(), parameters.velocity_degree + 2);
   const unsigned int   n_q_points = quadrature_formula.size();
 
-<<<<<<< HEAD:tests/sharp_interfaces_06.cc
-  const MPI_Comm &         mpi_communicator = triangulation.get_communicator();
-  FEValues<dim> fe_values(navier_stokes_solver.get_fe_u(), quadrature_formula, update_values);
-=======
   const MPI_Comm &            mpi_communicator = triangulation.get_communicator();
   FEValues<dim>               fe_values(navier_stokes_solver.get_fe_u(),
                           quadrature_formula,
                           update_values);
->>>>>>> upstream/master:tests/sim_spurious_currents.cc
   std::vector<Tensor<1, dim>> velocity_values(n_q_points);
   local_norm_velocity = 0;
 
@@ -192,21 +183,13 @@ MicroFluidicProblem<dim>::evaluate_spurious_velocities(
 
           if (ns_cell->center().norm() < 0.1)
             {
-<<<<<<< HEAD:tests/sharp_interfaces_06.cc
-             ns_values.get_function_values(navier_stokes_solver.solution.block(1), p_values);
-=======
               ns_values.get_function_values(navier_stokes_solver.solution.block(1),
                                             p_values);
->>>>>>> upstream/master:tests/sim_spurious_currents.cc
               for (unsigned int q = 0; q < n_q_points; ++q)
                 {
                   pressure_average += p_values[q] * ns_values.JxW(q);
                   one_average += ns_values.JxW(q);
                 }
-<<<<<<< HEAD:tests/sharp_interfaces_06.cc
-               
-=======
->>>>>>> upstream/master:tests/sim_spurious_currents.cc
             }
           for (unsigned int face = 0; face < GeometryInfo<dim>::faces_per_cell; ++face)
             if (ns_cell->face(face)->at_boundary())
@@ -236,10 +219,6 @@ MicroFluidicProblem<dim>::evaluate_spurious_velocities(
 
   // output spurious currents
   pcout << "  Size spurious currents, absolute: " << norm_velocity << std::endl;
-<<<<<<< HEAD:tests/sharp_interfaces_06.cc
-
-=======
->>>>>>> upstream/master:tests/sim_spurious_currents.cc
 }
 
 
