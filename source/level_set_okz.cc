@@ -204,7 +204,7 @@ LevelSetOKZSolver<dim>::transform_distance_function(
   LinearAlgebra::distributed::Vector<double> &vector) const
 {
   Assert(this->epsilon_used > 0, ExcInternalError());
-  for (unsigned int i = 0; i < vector.local_size(); i++)
+  for (unsigned int i = 0; i < vector.locally_owned_size(); i++)
     vector.local_element(i) =
       -std::tanh(vector.local_element(i) / (2. * this->epsilon_used));
 }
@@ -375,8 +375,6 @@ LevelSetOKZSolver<dim>::local_compute_force(
               pre_values.submit_dof_value(projected_value, i);
             }
           pre_values.evaluate(false, true);
-          //TODO: remove
-          ls_values.evaluate(false, true);
         }
       else
         ls_values.evaluate(false, true);
