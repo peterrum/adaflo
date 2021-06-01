@@ -99,13 +99,16 @@ namespace dealii
             evaluation_points.push_back(fe_eval.quadrature_point(q));
         }
 
+
+      //TODO: fe_eval_old???
       for (const auto &cell : euler_dofhandler.active_cell_iterators())
         {
-          fe_eval_old.reinit(cell);
+          fe_eval.reinit(cell);
 
-          for (const auto q : fe_eval_old.quadrature_point_indices())
-            evaluation_points_old.push_back(fe_eval_old.quadrature_point(q));
+          for (const auto q : fe_eval.quadrature_point_indices())
+            evaluation_points_old.push_back(fe_eval.quadrature_point(q));
         }
+      
 
       Utilities::MPI::RemotePointEvaluation<spacedim, spacedim> cache;
 
@@ -123,7 +126,7 @@ namespace dealii
                                                   evaluation_points,
                                                   cache);
 
-      const auto evaluation_values_t_old_x_old =
+      /*const auto evaluation_values_t_old_x_old =
         VectorTools::evaluate_at_points<spacedim>(background_mapping,
                                                   background_dofhandler,
                                                   velocity_vector_old,
@@ -135,8 +138,8 @@ namespace dealii
                                                   background_dofhandler,
                                                   velocity_vector,
                                                   evaluation_points_old,
-                                                  cache);
-
+                                                  cache);   
+      */
       unsigned int counter = 0;
 
       for (const auto &cell : euler_dofhandler.active_cell_iterators())
@@ -150,16 +153,17 @@ namespace dealii
 
           cell->get_dof_indices(temp_dof_indices);
           cell->get_dof_values(euler_coordinates_vector, temp);
-          cell->get_dof_values(euler_coordinates_vector_old, pos_old);
-          cell->get_dof_values(euler_coordinates_vector_old_old, pos_old_old);
+          //cell->get_dof_values(euler_coordinates_vector_old, pos_old);
+          //cell->get_dof_values(euler_coordinates_vector_old_old, pos_old_old);
 
           for (const auto q : fe_eval.quadrature_point_indices())
             {
-               const auto velocity = evaluation_values[counter++];
-               const auto velocity_t_old = evaluation_values_t_old[counter++];
-               const auto velocity_t_old_x_old = evaluation_values_t_old_x_old[counter++];
-               const auto velocity_x_old = evaluation_values_x_old[counter++];
+               const auto velocity = evaluation_values[counter];
+              // const auto velocity_t_old = evaluation_values_t_old[counter];
+              // const auto velocity_t_old_x_old = evaluation_values_t_old_x_old[counter];
+              // const auto velocity_x_old = evaluation_values_x_old[counter];
                
+              counter = counter +1;
 
               for (unsigned int comp = 0; comp < spacedim; ++comp)
                 {
@@ -222,119 +226,131 @@ namespace dealii
       normal_vector.update_ghost_values();
 
       std::vector<Point<spacedim>> evaluation_points;
-
-      for (const auto &cell : euler_dofhandler.active_cell_iterators())
+      std::cout << "before for loop" << std::endl;
+      // iteration of prolongation
+      for (int j = 0; j < 1; j++)
         {
-          fe_eval.reinit(cell);
+          std::cout << "iteration for loop" << std::endl;
+          for (const auto &cell : euler_dofhandler.active_cell_iterators())
+            {
+              fe_eval.reinit(cell);
 
-          for (const auto q : fe_eval.quadrature_point_indices())
-            evaluation_points.push_back(fe_eval.quadrature_point(q));
-        }
+              for (const auto q : fe_eval.quadrature_point_indices())
+                evaluation_points.push_back(fe_eval.quadrature_point(q));
+            }
 
-      Utilities::MPI::RemotePointEvaluation<spacedim, spacedim> cache;
+          Utilities::MPI::RemotePointEvaluation<spacedim, spacedim> cache;
 
-      const auto evaluation_values =
-        VectorTools::evaluate_at_points<spacedim>(background_mapping,
-                                                  background_dofhandler_dim,
-                                                  velocity_vector,
-                                                  evaluation_points,
-                                                  cache);
-      
-      const auto evaluation_values_ls = 
-        VectorTools::evaluate_at_points<spacedim>(background_mapping,
-                                                  background_dofhandler,
-                                                  levelset_vector,
-                                                  evaluation_points,
-                                                  cache);
-    
-    /*std::vector<typename FEPointEvaluation<n_components, dim>::value_type> evaluation_values_normal_dim;
-     for(int i=0; i<spacedim; i++)
-     {  
-       evaluation_values_normal_dim[i] =
-        VectorTools::evaluate_at_points<spacedim>(background_mapping,
-                                                  background_dofhandler,
-                                                  normal_vector.block(i),
-                                                  evaluation_points,
-                                                  cache);
-      // evaluation_values_normal_dim[i] = evaluation_values_normal;
-     }
-     */ 
-    // TODO: do better!
-      const auto evaluation_values_normal_dim_0 =
-        VectorTools::evaluate_at_points<spacedim>(background_mapping,
-                                                  background_dofhandler,
-                                                  normal_vector.block(0),
-                                                  evaluation_points,
-                                                  cache);
-      const auto evaluation_values_normal_dim_1 =
-        VectorTools::evaluate_at_points<spacedim>(background_mapping,
-                                                  background_dofhandler,
-                                                  normal_vector.block(1),
-                                                  evaluation_points,
-                                                  cache);
-     
-      unsigned int counter = 0;
-
-      for (const auto &cell : euler_dofhandler.active_cell_iterators())
-        {
-          fe_eval.reinit(cell);
-
-          temp.reinit(fe_eval.dofs_per_cell);
-          temp_dof_indices.resize(fe_eval.dofs_per_cell);
-
-          cell->get_dof_indices(temp_dof_indices);
-
-          // iteration of prolongation
-          for (int j = 0; j < 3; j++)
-          {
-            cell->get_dof_values(euler_coordinates_vector, temp);
-
-            for (const auto q : fe_eval.quadrature_point_indices())
-              {
-                const auto velocity = evaluation_values[counter++];
-                const auto phi = evaluation_values_ls[counter++];
-                const auto normal_0 = evaluation_values_normal_dim_0[counter++];
-                const auto normal_1 = evaluation_values_normal_dim_1[counter++];
-                //const auto normal_2 = evaluation_values_normal_dim_2[counter++];
-                //TODO: normalize normal vector??
-                const auto normal_normalized_0 = normal_0[q]/(std::sqrt(normal_0[q]*normal_0[q] + normal_1[q]*normal_1[q]));
-                const auto normal_normalized_1 = normal_1[q]/(std::sqrt(normal_0[q]*normal_0[q] + normal_1[q]*normal_1[q]));
-                for (unsigned int comp = 0; comp < spacedim; ++comp)
-                  {
-                    //normal[comp] = evaluation_values_normal_dim[comp][counter++];
-                    const auto i =
-                      euler_dofhandler.get_fe().component_to_system_index(comp, q);
-                    //TODO: modify condition??  
-                    if(j == 0 || (phi[q] > 0.0 && phi[q] < 1.0))
-                    {
-                      // TODO: why phi 2 entries??????? -> pts of surface mesh?
-                      std::cout  << "i = " << i << " and comp = " << comp << "  and q = "<< q << std::endl;
-                      std::cout << "temp = " << temp[i] << " phi = " << phi[q] << "   normal_0 = " << normal_0[q]
-                         << "  normalized 0 = " << normal_normalized_0 << "  normal_1 = " << normal_1[q]
-                         << "  normalized 1 = " << normal_normalized_1 << std::endl;
-                      //temp[i] = fe_eval.quadrature_point(q)[comp] ; // + normal[comp] * phi;
-                      if(comp == 0){
-                        temp[i] = fe_eval.quadrature_point(q)[comp] + normal_normalized_0 * phi[q];
-                      }else if(comp == 1){
-                        temp[i] = fe_eval.quadrature_point(q)[comp] + normal_normalized_1 * phi[q];
-                      }else{
-                        std::cout << "I do not understand!" << std::endl;
-                      }
-                      std::cout << "temp = " << temp[i] << std::endl;
-                      // save old ls_value to decide if another iteration is necessary by sign comparing?
-                      //const auto phi_old = phi;
-                    }else{
-                      std::cout << "else" << std::endl;
-                    }
-                     //TODO: moved point outside of box?
-
-                  }
-              }
-            cell->set_dof_values(temp, euler_coordinates_vector_temp);
+          const auto evaluation_values =
+            VectorTools::evaluate_at_points<spacedim>(background_mapping,
+                                                      background_dofhandler_dim,
+                                                      velocity_vector,
+                                                      evaluation_points,
+                                                      cache);
+          
+          const auto evaluation_values_ls = 
+            VectorTools::evaluate_at_points<spacedim>(background_mapping,
+                                                      background_dofhandler,
+                                                      levelset_vector,
+                                                      evaluation_points,
+                                                      cache);
+        
+          /*std::vector<typename FEPointEvaluation<n_components, dim>::value_type> evaluation_values_normal_dim;
+          for(int i=0; i<spacedim; i++)
+          {  
+            evaluation_values_normal_dim[i] =
+              VectorTools::evaluate_at_points<spacedim>(background_mapping,
+                                                        background_dofhandler,
+                                                        normal_vector.block(i),
+                                                        evaluation_points,
+                                                        cache);
+            // evaluation_values_normal_dim[i] = evaluation_values_normal;
           }
-        }
+          */ 
+          // TODO: do better!
+          const auto evaluation_values_normal_dim_0 =
+            VectorTools::evaluate_at_points<spacedim>(background_mapping,
+                                                      background_dofhandler,
+                                                      normal_vector.block(0),
+                                                      evaluation_points,
+                                                      cache);
+          const auto evaluation_values_normal_dim_1 =
+            VectorTools::evaluate_at_points<spacedim>(background_mapping,
+                                                      background_dofhandler,
+                                                      normal_vector.block(1),
+                                                      evaluation_points,
+                                                      cache);
+        
+          unsigned int counter = 0;
 
-      euler_coordinates_vector = euler_coordinates_vector_temp;
+          for (const auto &cell : euler_dofhandler.active_cell_iterators())
+            {
+              std::cout << "active cell for loop" << std::endl;
+              fe_eval.reinit(cell);
+
+              temp.reinit(fe_eval.dofs_per_cell);
+              temp_dof_indices.resize(fe_eval.dofs_per_cell);
+
+              cell->get_dof_indices(temp_dof_indices);
+
+              
+              cell->get_dof_values(euler_coordinates_vector, temp);
+
+              for (const auto q : fe_eval.quadrature_point_indices())
+                {
+                  std::cout << "quad for loop" << std::endl;
+                  const auto velocity = evaluation_values[counter];
+                  const auto phi = evaluation_values_ls[counter];
+                  const auto normal_0 = evaluation_values_normal_dim_0[counter];
+                  const auto normal_1 = evaluation_values_normal_dim_1[counter];
+                  //const auto normal_2 = evaluation_values_normal_dim_2[counter++];
+                  //TODO: normalize normal vector??
+                  const auto normal_normalized_0 = normal_0[q]/(std::sqrt(normal_0[q]*normal_0[q] + normal_1[q]*normal_1[q]));
+                  const auto normal_normalized_1 = normal_1[q]/(std::sqrt(normal_0[q]*normal_0[q] + normal_1[q]*normal_1[q]));
+                  for (unsigned int comp = 0; comp < spacedim; ++comp)
+                    {
+                      std::cout << "for loop" << std::endl;
+                      //normal[comp] = evaluation_values_normal_dim[comp][counter++];
+                      const auto i =
+                        euler_dofhandler.get_fe().component_to_system_index(comp, q);
+                      //TODO: modify condition??  
+                      if(j == 0 || (phi[q] < 1.0 && phi[q] > -1.0))
+                      {
+                        std::cout  << "i = " << i << " and comp = " << comp << "  and q = "<< q << std::endl;
+                        std::cout << "temp = " << temp[i] << " phi = " << phi[q] << "   normal_0 = " << normal_0[q]
+                          << "  normalized 0 = " << normal_normalized_0 << "  normal_1 = " << normal_1[q]
+                          << "  normalized 1 = " << normal_normalized_1 << std::endl;
+                        
+                        if(comp == 0){
+                          temp[i] = fe_eval.quadrature_point(q)[comp] + normal_normalized_0 * phi[q];
+                        }else if(comp == 1){
+                          temp[i] = fe_eval.quadrature_point(q)[comp] + normal_normalized_1 * phi[q];
+                        }else{
+                          std::cout << "I do not understand!" << std::endl;
+                        }
+                        std::cout << "temp = " << temp[i] << std::endl;
+                        // save old ls_value to decide if another iteration is necessary by sign comparing?
+                        //const auto phi_old = phi;
+                      }else{
+                        std::cout << "else" << std::endl;
+                      }
+                      //TODO: moved point outside of box? boundary points?
+                      // check if point is outside domain and if so then project it back to the
+                      // domain
+                     /* if (temp[i] < boundary_points.first[comp])
+                        temp[i] = boundary_points.first[comp];
+                      else if (temp[i] > boundary_points.second[compd])
+                        temp[i] = boundary_points.second[comp];
+                      */
+                    }
+                    counter = counter + 1;
+                }
+                
+              cell->set_dof_values(temp, euler_coordinates_vector_temp);
+            }
+      
+        	  euler_coordinates_vector = euler_coordinates_vector_temp;
+          }
     }
   } // namespace VectorTools
 
