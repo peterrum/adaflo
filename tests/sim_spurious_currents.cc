@@ -116,14 +116,17 @@ MicroFluidicProblem<dim>::MicroFluidicProblem(const TwoPhaseParameters &paramete
 
 template <int dim>
 void
-MicroFluidicProblem<dim>::evaluate_spurious_velocities(NavierStokes<dim> &navier_stokes_solver)
+MicroFluidicProblem<dim>::evaluate_spurious_velocities(
+  NavierStokes<dim> &navier_stokes_solver)
 {
   double               local_norm_velocity, norm_velocity;
   const QIterated<dim> quadrature_formula(QTrapez<1>(), parameters.velocity_degree + 2);
   const unsigned int   n_q_points = quadrature_formula.size();
 
-  const MPI_Comm &         mpi_communicator = triangulation.get_communicator();
-  FEValues<dim> fe_values(navier_stokes_solver.get_fe_u(), quadrature_formula, update_values);
+  const MPI_Comm &            mpi_communicator = triangulation.get_communicator();
+  FEValues<dim>               fe_values(navier_stokes_solver.get_fe_u(),
+                          quadrature_formula,
+                          update_values);
   std::vector<Tensor<1, dim>> velocity_values(n_q_points);
   local_norm_velocity = 0;
 
@@ -180,14 +183,13 @@ MicroFluidicProblem<dim>::evaluate_spurious_velocities(NavierStokes<dim> &navier
 
           if (ns_cell->center().norm() < 0.1)
             {
-              //pcout << "ns_cell_center_norm" << ns_cell->center().norm() << std::endl;
-              ns_values.get_function_values(navier_stokes_solver.solution.block(1), p_values);
+              ns_values.get_function_values(navier_stokes_solver.solution.block(1),
+                                            p_values);
               for (unsigned int q = 0; q < n_q_points; ++q)
                 {
                   pressure_average += p_values[q] * ns_values.JxW(q);
                   one_average += ns_values.JxW(q);
                 }
-               
             }
           for (unsigned int face = 0; face < GeometryInfo<dim>::faces_per_cell; ++face)
             if (ns_cell->face(face)->at_boundary())
@@ -211,23 +213,12 @@ MicroFluidicProblem<dim>::evaluate_spurious_velocities(NavierStokes<dim> &navier
                      2. * (dim - 1) * parameters.surface_tension) /
                     (2 * (dim - 1) * parameters.surface_tension) * 100.;
     std::cout.precision(8);
-    //pcout << "  pressure_average:  " << pressure_average << "   one_average: " << one_average << std::endl;
-    //pcout << "  press_b:  " << press_b << "  one_b: " << one_b << std::endl;
+    // output relative pressure error
     pcout << "  Error in pressure jump: " << pressure_jump << " %" << std::endl;
   }
 
-  // calculate spurious currents
+  // output spurious currents
   pcout << "  Size spurious currents, absolute: " << norm_velocity << std::endl;
-
-  // TODO: Do I need this?
-  std::vector<double> data(3);
-  data[0] = navier_stokes_solver.time_stepping.now();
-  data[1] = norm_velocity;
-  data[2] = pressure_jump;
-  if (solution_data.size() && data[0] == solution_data.back()[0])
-    solution_data.back().insert(solution_data.back().end(), data.begin() + 1, data.end());
-  else
-    solution_data.push_back(data);
 }
 
 
@@ -248,15 +239,18 @@ MicroFluidicProblem<dim>::run()
   navier_stokes_solver.setup_problem(Functions::ZeroFunction<dim>(dim));
   navier_stokes_solver.output_solution(parameters.output_filename);
 
-  Triangulation<dim - 1, dim> surface_mesh;
+  parallel::shared::Triangulation<dim - 1, dim> surface_mesh(mpi_communicator);
   GridGenerator::hyper_sphere(surface_mesh, Point<dim>(0.02, 0.03), 0.5);
   surface_mesh.refine_global(5);
 
   std::unique_ptr<SharpInterfaceSolver> solver;
 
   if (parameters.solver_method == "front tracking")
-    solver =
-      std::make_unique<FrontTrackingSolver<dim>>(navier_stokes_solver, surface_mesh);
+    {
+      AssertDimension(Utilities::MPI::n_mpi_processes(mpi_communicator), 1);
+      solver =
+        std::make_unique<FrontTrackingSolver<dim>>(navier_stokes_solver, surface_mesh);
+    }
   else if (parameters.solver_method == "mixed level set")
     solver = std::make_unique<MixedLevelSetSolver<dim>>(navier_stokes_solver,
                                                         surface_mesh,
@@ -271,7 +265,6 @@ MicroFluidicProblem<dim>::run()
   else
     AssertThrow(false, ExcNotImplemented());
 
-  pcout << "first output" << std::endl;
   solver->output_solution(parameters.output_filename);
 
   while (navier_stokes_solver.time_stepping.at_end() == false)
@@ -280,7 +273,7 @@ MicroFluidicProblem<dim>::run()
 
       solver->output_solution(parameters.output_filename);
 
-      // evaluate velocity norm and pressure jump
+      // evaluate velocity norm and relative pressure error
       evaluate_spurious_velocities(navier_stokes_solver);
     }
 }
