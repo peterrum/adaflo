@@ -844,16 +844,29 @@ public:
     euler_dofhandler.distribute_dofs(surface_fe_dim);
 
     euler_vector.reinit(euler_dofhandler.n_dofs());
+    //TODO: necessary?
+    euler_vector_old.reinit(euler_dofhandler.n_dofs());
+    euler_vector_old_old.reinit(euler_dofhandler.n_dofs());
+
     euler_vector.update_ghost_values();
+    //TODO: necessary?
+    euler_vector_old.update_ghost_values();
+    euler_vector_old_old.update_ghost_values();
+
     VectorTools::
       get_position_vector(MappingQGeneric<dim - 1, dim>(4 /*TODO: this is a high number to well represent curved surfaces, the actual value is not that relevant*/), euler_dofhandler, euler_vector);
     euler_vector.zero_out_ghost_values();
     euler_mapping =
       std::make_shared<MappingFEField<dim - 1, dim, VectorType>>(euler_dofhandler,
                                                                  euler_vector);
+    VectorTools::
+      get_position_vector(MappingQGeneric<dim - 1, dim>(4 /*TODO: this is a high number to well represent curved surfaces, the actual value is not that relevant*/), euler_dofhandler, euler_vector_old);
+    euler_vector_old.zero_out_ghost_values();
+
     euler_mapping_old =
       std::make_shared<MappingFEField<dim - 1, dim, VectorType>>(euler_dofhandler,
                                                                  euler_vector_old);
+
     auto euler_vector_old = euler_vector;
     auto euler_vector_old_old = euler_vector_old;
 
@@ -1394,7 +1407,7 @@ private:
   {
     Assert(use_auxiliary_surface_mesh, ExcNotImplemented());
 
-   /*VectorTools::update_position_vector(navier_stokes_solver.time_stepping.step_size(),
+   VectorTools::update_position_vector(navier_stokes_solver.time_stepping.step_size(),
                                         navier_stokes_solver.get_dof_handler_u(),
                                         navier_stokes_solver.mapping,
                                         navier_stokes_solver.solution.block(0),
@@ -1406,8 +1419,8 @@ private:
                                         euler_vector,
                                         euler_vector_old,
                                         euler_vector_old_old);
-    */
-    VectorTools::update_position_vector_level_set(navier_stokes_solver.time_stepping.step_size(),
+    
+    /*VectorTools::update_position_vector_level_set(navier_stokes_solver.time_stepping.step_size(),
                                         level_set_solver.get_dof_handler(),
                                         navier_stokes_solver.get_dof_handler_u(),
                                         navier_stokes_solver.mapping,
@@ -1417,7 +1430,7 @@ private:
                                         euler_dofhandler,
                                         *euler_mapping,
                                         euler_vector);   
-                                                                      
+            */                                                          
   }
 
   void
