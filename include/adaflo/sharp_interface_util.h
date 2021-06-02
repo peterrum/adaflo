@@ -177,12 +177,13 @@ namespace dealii
                   velocity_half_dt[i] = 0.5*(velocity_t_old[comp] + velocity[comp]);
                   // v(t_i+dt, x_i-1) = 1/2*(v(t_i,x_i-1)+v(t_i-1,x_i-1))
                   velocity_half_dt_x_old[i] = 0.5*(velocity_t_old_x_old[comp] + velocity_x_old[comp]);
-                  /*
+                  
+                  std::cout << "comp = " << comp << "   i = " << i << std::endl;
                   std::cout << "velocity old = " << velocity_t_old[comp] << " and velocity = " << velocity[comp]
                             << " and velo t&x old = " << velocity_t_old_x_old[comp] << " and velo x old = " << velocity_x_old[comp]<< std::endl;
                   std::cout << "velocity half = " << velocity_half_dt[i] << " and velocity half old = " << velocity_half_dt_x_old[i] << std::endl;
                   std::cout << "temp  = " << temp[i] << "  and pos old = " << pos_old[i]<< " and pos old old = " << pos_old_old[i] << std::endl;
-                  */
+                  
                   // if x_i-1 = x_i
                   if(pos_old[i] == fe_eval.quadrature_point(q)[comp])
                   {
@@ -198,7 +199,7 @@ namespace dealii
                   
                   temp[i] = fe_eval.quadrature_point(q)[comp] + dt/6*(K1 + 2*K2 + 2*K3 + K4);
                   std::cout << "i = " << i << ": quad pt = " << fe_eval.quadrature_point(q)[comp] << "  and temp = " << temp[i] << std::endl;
-                  std::cout << "k1 = " << K1 << " and K2 = " << K2 << " and K3 = " << K3 << " and K4 = " << K4 << std::endl;
+                  std::cout << "k1 = " << K1 << " and K2 = " << K2 << " and K3 = " << K3 << " and K4 = " << K4 << "\n" << std::endl;
                 
                 // old variant: explicit Euler
                 // temp[i] = fe_eval.quadrature_point(q)[comp] + dt * velocity[comp];
@@ -206,7 +207,7 @@ namespace dealii
             }
 
           cell->set_dof_values(temp, euler_coordinates_vector_temp);
-          counter = counter + 2;
+          counter = ++counter;
         }
 
       //save position for RK4 time step in next cyle
