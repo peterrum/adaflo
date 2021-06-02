@@ -246,8 +246,6 @@ namespace dealii
       levelset_vector.update_ghost_values();
       normal_vector.update_ghost_values();
 
-      
-
       // iteration of prolongation
       for (int j = 0; j < 3; j++)
         {
@@ -312,74 +310,30 @@ namespace dealii
               temp_dof_indices.resize(fe_eval.dofs_per_cell);
 
               cell->get_dof_indices(temp_dof_indices);
-
               
               cell->get_dof_values(euler_coordinates_vector, temp);
 
               for (const auto q : fe_eval.quadrature_point_indices())
                 {
-                  //const auto velocity = evaluation_values[counter];
                   const auto phi = evaluation_values_ls[counter];
-                  const auto normal_0 = evaluation_values_normal_dim_0[counter];
-                  const auto normal_1 = evaluation_values_normal_dim_1[counter];
-                  // normalize normal vector
-                  auto normal_normalized_0 = normal_0;
-                  auto normal_normalized_1 = normal_1;
-                  if(normal_0*normal_0 + normal_1*normal_1 > 1e-10)
-                  {
-                    normal_normalized_0 = normal_0/(std::sqrt(normal_0*normal_0 + normal_1*normal_1));
-                    normal_normalized_1 = normal_1/(std::sqrt(normal_0*normal_0 + normal_1*normal_1));
-                  }
+                  
+                  Point<spacedim> normal;
+                  
+                  normal[0] = evaluation_values_normal_dim_0[counter];
+                  normal[1] = evaluation_values_normal_dim_1[counter];
+                  
+                  if(normal.norm() > 1e-10)
+                      normal/=normal.norm();
                   
                   for (unsigned int comp = 0; comp < spacedim; ++comp)
-                    {
-                      //normal[comp] = evaluation_values_normal_dim[comp][counter++];
-                      const auto i =
-                        euler_dofhandler.get_fe().component_to_system_index(comp, q);
-                      //TODO: modify condition??  
-                      if(phi < 1.0 && phi > -1.0)
-                      {
-                        //std::cout  << "comp = " << comp << "     q = "<< q << "     i = " << i << ":" << std::endl;
-                        /*std::cout << "temp = " << temp[i] << " phi = " << phi[q] << "   normal_0 = " << normal_0[q]
-                          << "  normalized 0 = " << normal_normalized_0 << "  normal_1 = " << normal_1[q]
-                          << "  normalized 1 = " << normal_normalized_1 << std::endl;
-                        */
-
-                        if(comp == 0){
-                          temp[i] = fe_eval.quadrature_point(q)[comp]  - 0.01* normal_normalized_0 * phi;
-                        }else if(comp == 1){
-                          temp[i] = fe_eval.quadrature_point(q)[comp]  - 0.01* normal_normalized_1 * phi;
-                        }else{
-                          std::cout << "I do not understand!" << std::endl;
-                        }
-                        if (phi==0){
-                          std::cout.precision(8);
-                        std::cout  << "comp = " << comp << "     q = "<< q << "     i = " << i << ":" << std::endl;
-                        std::cout << "x before = " << fe_eval.quadrature_point(q)[comp]<< "   x after = " << temp[i] << std::endl;
-                        std::cout << " phi = " << phi << "     normal 0 = " 
-                                  << normal_normalized_0 << "  normal_1 = " << normal_normalized_1 << std::endl;
-                        }
-                        //TODO: save old ls_value to decide if another iteration is necessary by sign comparing?
-                        //const auto phi_old = phi;
-                      }else{
-                        std::cout << "else" << std::endl;
-                      }
-                      //TODO: moved point outside of box? boundary points?
-                      // check if point is outside domain and if so then project it back to the
-                      // domain
-                     /* if (temp[i] < boundary_points.first[comp])
-                        temp[i] = boundary_points.first[comp];
-                      else if (temp[i] > boundary_points.second[compd])
-                        temp[i] = boundary_points.second[comp];
-                      */
-                    }
-                    counter = counter +1 ;
+                    temp[euler_dofhandler.get_fe().component_to_system_index(comp, q)] = fe_eval.quadrature_point(q)[comp]  - 0.01* normal[comp] * phi;
+                      
+                  counter++;
                 }
                 
               cell->set_dof_values(temp, euler_coordinates_vector_temp);
             }
-      
-        	  euler_coordinates_vector = euler_coordinates_vector_temp;
+            euler_coordinates_vector = euler_coordinates_vector_temp;
           }
     }
   } // namespace VectorTools
