@@ -121,21 +121,21 @@ namespace dealii
                                             cache);
 
       const auto evaluation_values_t_old =
-        VectorTools::evaluate_at_points<spacedim>(background_mapping,
+        VectorTools::point_values<spacedim>(background_mapping,
                                                   background_dofhandler,
                                                   velocity_vector_old,
                                                   evaluation_points,
                                                   cache);
 
       const auto evaluation_values_t_old_x_old =
-        VectorTools::evaluate_at_points<spacedim>(background_mapping,
+        VectorTools::point_values<spacedim>(background_mapping,
                                                   background_dofhandler,
                                                   velocity_vector_old,
                                                   evaluation_points_old,
                                                   cache);
 
       const auto evaluation_values_x_old =
-        VectorTools::evaluate_at_points<spacedim>(background_mapping,
+        VectorTools::point_values<spacedim>(background_mapping,
                                                   background_dofhandler,
                                                   velocity_vector,
                                                   evaluation_points_old,
@@ -208,7 +208,7 @@ namespace dealii
             }
 
           cell->set_dof_values(temp, euler_coordinates_vector_temp);
-          counter = ++counter;
+          counter = counter +1;
         }
 
       //save position for RK4 time step in next cyle
@@ -246,11 +246,12 @@ namespace dealii
       levelset_vector.update_ghost_values();
       normal_vector.update_ghost_values();
 
-      std::vector<Point<spacedim>> evaluation_points;
+      
 
       // iteration of prolongation
       for (int j = 0; j < 1; j++)
         {
+          std::vector<Point<spacedim>> evaluation_points;
           for (const auto &cell : euler_dofhandler.active_cell_iterators())
             {
               fe_eval.reinit(cell);
@@ -262,14 +263,14 @@ namespace dealii
           Utilities::MPI::RemotePointEvaluation<spacedim, spacedim> cache;
 
          /* const auto evaluation_values =
-            VectorTools::evaluate_at_points<spacedim>(background_mapping,
+            VectorTools::point_values<spacedim>(background_mapping,
                                                       background_dofhandler_dim,
                                                       velocity_vector,
                                                       evaluation_points,
                                                       cache);
           */
           const auto evaluation_values_ls = 
-            VectorTools::evaluate_at_points<spacedim>(background_mapping,
+            VectorTools::point_values<spacedim>(background_mapping,
                                                       background_dofhandler,
                                                       levelset_vector,
                                                       evaluation_points,
@@ -279,7 +280,7 @@ namespace dealii
           for(int i=0; i<spacedim; i++)
           {  
             evaluation_values_normal_dim[i] =
-              VectorTools::evaluate_at_points<spacedim>(background_mapping,
+              VectorTools::point_values<spacedim>(background_mapping,
                                                         background_dofhandler,
                                                         normal_vector.block(i),
                                                         evaluation_points,
@@ -289,13 +290,13 @@ namespace dealii
           */ 
           // TODO: do better!
           const auto evaluation_values_normal_dim_0 =
-            VectorTools::evaluate_at_points<spacedim>(background_mapping,
+            VectorTools::point_values<spacedim>(background_mapping,
                                                       background_dofhandler,
                                                       normal_vector.block(0),
                                                       evaluation_points,
                                                       cache);
           const auto evaluation_values_normal_dim_1 =
-            VectorTools::evaluate_at_points<spacedim>(background_mapping,
+            VectorTools::point_values<spacedim>(background_mapping,
                                                       background_dofhandler,
                                                       normal_vector.block(1),
                                                       evaluation_points,
@@ -329,6 +330,7 @@ namespace dealii
                     normal_normalized_0 = normal_0[q]/(std::sqrt(normal_0[q]*normal_0[q] + normal_1[q]*normal_1[q]));
                     normal_normalized_1 = normal_1[q]/(std::sqrt(normal_0[q]*normal_0[q] + normal_1[q]*normal_1[q]));
                   }
+                  
                   for (unsigned int comp = 0; comp < spacedim; ++comp)
                     {
                       //normal[comp] = evaluation_values_normal_dim[comp][counter++];
@@ -343,9 +345,9 @@ namespace dealii
                           << "  normalized 1 = " << normal_normalized_1 << std::endl;
                         
                         if(comp == 0){
-                          temp[i] = fe_eval.quadrature_point(q)[comp] + 0.1* normal_normalized_0 * phi[q];
+                          temp[i] = fe_eval.quadrature_point(q)[comp] + normal_normalized_0 * std::abs(phi[q]);
                         }else if(comp == 1){
-                          temp[i] = fe_eval.quadrature_point(q)[comp] + 0.1* normal_normalized_1 * phi[q];
+                          temp[i] = fe_eval.quadrature_point(q)[comp] + normal_normalized_1 * std::abs(phi[q]);
                         }else{
                           std::cout << "I do not understand!" << std::endl;
                         }
@@ -364,7 +366,7 @@ namespace dealii
                         temp[i] = boundary_points.second[comp];
                       */
                     }
-                    counter = ++counter;
+                    counter = counter +1 ;
                 }
                 
               cell->set_dof_values(temp, euler_coordinates_vector_temp);
