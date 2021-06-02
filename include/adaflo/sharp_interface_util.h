@@ -246,8 +246,7 @@ namespace dealii
       levelset_vector.update_ghost_values();
       normal_vector.update_ghost_values();
 
-      // iteration of prolongation
-      for (int j = 0; j < 3; j++)
+      for (int j = 0; j < 3 /*TODO: make parameter*/; ++j)
         {
           std::vector<Point<spacedim>> evaluation_points;
           for (const auto &cell : euler_dofhandler.active_cell_iterators())
@@ -259,46 +258,21 @@ namespace dealii
             }
 
           Utilities::MPI::RemotePointEvaluation<spacedim, spacedim> cache;
+          
+          cache.reinit(evaluation_points, background_dofhandler.get_triangulation(), background_mapping);
 
-         /* const auto evaluation_values =
-            VectorTools::point_values<spacedim>(background_mapping,
-                                                      background_dofhandler_dim,
-                                                      velocity_vector,
-                                                      evaluation_points,
-                                                      cache);
-          */
           const auto evaluation_values_ls = 
-            VectorTools::point_values<1>(background_mapping,
-                                                      background_dofhandler,
-                                                      levelset_vector,
-                                                      evaluation_points,
-                                                      cache);
+            VectorTools::point_values<1>(cache,
+                                         background_dofhandler,
+                                         levelset_vector);
         
-          /*std::vector<typename FEPointEvaluation<n_components, dim>::value_type> evaluation_values_normal_dim;
-          for(int i=0; i<spacedim; i++)
-          {  
-            evaluation_values_normal_dim[i] =
-              VectorTools::point_values<spacedim>(background_mapping,
-                                                        background_dofhandler,
-                                                        normal_vector.block(i),
-                                                        evaluation_points,
-                                                        cache);
-            // evaluation_values_normal_dim[i] = evaluation_values_normal;
-          }
-          */ 
-          // TODO: do better!
-          const auto evaluation_values_normal_dim_0 =
-            VectorTools::point_values<1>(background_mapping,
+          std::array<std::vector<double>, spacedim> evaluation_values_normal;
+          
+          for (unsigned int comp = 0; comp < spacedim; ++comp)
+            evaluation_values_normal[comp] =
+            VectorTools::point_values<1>(cache,
                                          background_dofhandler,
-                                         normal_vector.block(0),
-                                         evaluation_points,
-                                         cache);
-          const auto evaluation_values_normal_dim_1 =
-            VectorTools::point_values<1>(background_mapping,
-                                         background_dofhandler,
-                                         normal_vector.block(1),
-                                         evaluation_points,
-                                         cache);
+                                         normal_vector.block(comp));
           
           unsigned int counter = 0;
 
@@ -319,14 +293,15 @@ namespace dealii
                   
                   Point<spacedim> normal;
                   
-                  normal[0] = evaluation_values_normal_dim_0[counter];
-                  normal[1] = evaluation_values_normal_dim_1[counter];
+                  for (unsigned int comp = 0; comp < spacedim; ++comp)
+                    normal[comp] = evaluation_values_normal[comp][counter];
                   
                   if(normal.norm() > 1e-10)
                       normal/=normal.norm();
                   
                   for (unsigned int comp = 0; comp < spacedim; ++comp)
-                    temp[euler_dofhandler.get_fe().component_to_system_index(comp, q)] = fe_eval.quadrature_point(q)[comp]  - 0.01* normal[comp] * phi;
+                    temp[euler_dofhandler.get_fe().component_to_system_index(comp, q)] = 
+                            fe_eval.quadrature_point(q)[comp]  - 0.01* normal[comp] * phi;
                       
                   counter++;
                 }
