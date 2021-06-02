@@ -249,7 +249,7 @@ namespace dealii
       
 
       // iteration of prolongation
-      for (int j = 0; j < 1; j++)
+      for (int j = 0; j < 3; j++)
         {
           std::vector<Point<spacedim>> evaluation_points;
           for (const auto &cell : euler_dofhandler.active_cell_iterators())
@@ -270,7 +270,7 @@ namespace dealii
                                                       cache);
           */
           const auto evaluation_values_ls = 
-            VectorTools::point_values<spacedim>(background_mapping,
+            VectorTools::point_values<1>(background_mapping,
                                                       background_dofhandler,
                                                       levelset_vector,
                                                       evaluation_points,
@@ -290,18 +290,18 @@ namespace dealii
           */ 
           // TODO: do better!
           const auto evaluation_values_normal_dim_0 =
-            VectorTools::point_values<spacedim>(background_mapping,
-                                                      background_dofhandler,
-                                                      normal_vector.block(0),
-                                                      evaluation_points,
-                                                      cache);
+            VectorTools::point_values<1>(background_mapping,
+                                         background_dofhandler,
+                                         normal_vector.block(0),
+                                         evaluation_points,
+                                         cache);
           const auto evaluation_values_normal_dim_1 =
-            VectorTools::point_values<spacedim>(background_mapping,
-                                                      background_dofhandler,
-                                                      normal_vector.block(1),
-                                                      evaluation_points,
-                                                      cache);
-        
+            VectorTools::point_values<1>(background_mapping,
+                                         background_dofhandler,
+                                         normal_vector.block(1),
+                                         evaluation_points,
+                                         cache);
+          
           unsigned int counter = 0;
 
           for (const auto &cell : euler_dofhandler.active_cell_iterators())
@@ -323,12 +323,12 @@ namespace dealii
                   const auto normal_0 = evaluation_values_normal_dim_0[counter];
                   const auto normal_1 = evaluation_values_normal_dim_1[counter];
                   // normalize normal vector
-                  auto normal_normalized_0 = normal_0[q];
-                  auto normal_normalized_1 = normal_1[q];
-                  if(normal_0[q] != 0 && normal_1[q] != 0)
+                  auto normal_normalized_0 = normal_0;
+                  auto normal_normalized_1 = normal_1;
+                  if(normal_0*normal_0 + normal_1*normal_1 > 1e-10)
                   {
-                    normal_normalized_0 = normal_0[q]/(std::sqrt(normal_0[q]*normal_0[q] + normal_1[q]*normal_1[q]));
-                    normal_normalized_1 = normal_1[q]/(std::sqrt(normal_0[q]*normal_0[q] + normal_1[q]*normal_1[q]));
+                    normal_normalized_0 = normal_0/(std::sqrt(normal_0*normal_0 + normal_1*normal_1));
+                    normal_normalized_1 = normal_1/(std::sqrt(normal_0*normal_0 + normal_1*normal_1));
                   }
                   
                   for (unsigned int comp = 0; comp < spacedim; ++comp)
@@ -337,7 +337,7 @@ namespace dealii
                       const auto i =
                         euler_dofhandler.get_fe().component_to_system_index(comp, q);
                       //TODO: modify condition??  
-                      if(phi[q] < 1.0 && phi[q] > -1.0)
+                      if(phi < 1.0 && phi > -1.0)
                       {
                         //std::cout  << "comp = " << comp << "     q = "<< q << "     i = " << i << ":" << std::endl;
                         /*std::cout << "temp = " << temp[i] << " phi = " << phi[q] << "   normal_0 = " << normal_0[q]
@@ -346,24 +346,23 @@ namespace dealii
                         */
 
                         if(comp == 0){
-                          temp[i] = fe_eval.quadrature_point(q)[comp]  - 0.01* normal_normalized_0 * phi[q];
+                          temp[i] = fe_eval.quadrature_point(q)[comp]  - 0.01* normal_normalized_0 * phi;
                         }else if(comp == 1){
-                          temp[i] = fe_eval.quadrature_point(q)[comp]  - 0.01* normal_normalized_1 * phi[q];
+                          temp[i] = fe_eval.quadrature_point(q)[comp]  - 0.01* normal_normalized_1 * phi;
                         }else{
                           std::cout << "I do not understand!" << std::endl;
                         }
-                        if (phi[q]==0){
+                        if (phi==0){
                           std::cout.precision(8);
                         std::cout  << "comp = " << comp << "     q = "<< q << "     i = " << i << ":" << std::endl;
                         std::cout << "x before = " << fe_eval.quadrature_point(q)[comp]<< "   x after = " << temp[i] << std::endl;
-                        std::cout << " phi = " << phi[q] << "     normal 0 = " 
+                        std::cout << " phi = " << phi << "     normal 0 = " 
                                   << normal_normalized_0 << "  normal_1 = " << normal_normalized_1 << std::endl;
                         }
                         //TODO: save old ls_value to decide if another iteration is necessary by sign comparing?
                         //const auto phi_old = phi;
                       }else{
                         std::cout << "else" << std::endl;
-                        }
                       }
                       //TODO: moved point outside of box? boundary points?
                       // check if point is outside domain and if so then project it back to the
