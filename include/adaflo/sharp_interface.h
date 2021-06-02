@@ -1407,7 +1407,7 @@ private:
   {
     Assert(use_auxiliary_surface_mesh, ExcNotImplemented());
 
-   VectorTools::update_position_vector(navier_stokes_solver.time_stepping.step_size(),
+   /*VectorTools::update_position_vector(navier_stokes_solver.time_stepping.step_size(),
                                         navier_stokes_solver.get_dof_handler_u(),
                                         navier_stokes_solver.mapping,
                                         navier_stokes_solver.solution.block(0),
@@ -1419,8 +1419,8 @@ private:
                                         euler_vector,
                                         euler_vector_old,
                                         euler_vector_old_old);
-    
-    /*VectorTools::update_position_vector_level_set(navier_stokes_solver.time_stepping.step_size(),
+    */
+    VectorTools::update_position_vector_level_set(navier_stokes_solver.time_stepping.step_size(),
                                         level_set_solver.get_dof_handler(),
                                         navier_stokes_solver.get_dof_handler_u(),
                                         navier_stokes_solver.mapping,
@@ -1430,7 +1430,7 @@ private:
                                         euler_dofhandler,
                                         *euler_mapping,
                                         euler_vector);   
-            */                                                          
+                                                                   
   }
 
   void
