@@ -337,25 +337,33 @@ namespace dealii
                       const auto i =
                         euler_dofhandler.get_fe().component_to_system_index(comp, q);
                       //TODO: modify condition??  
-                      if(j == 0 || (phi[q] < 1.0 && phi[q] > -1.0))
+                      if(phi[q] < 1.0 && phi[q] > -1.0)
                       {
-                        std::cout  << "i = " << i << " and comp = " << comp << "  and q = "<< q << std::endl;
-                        std::cout << "temp = " << temp[i] << " phi = " << phi[q] << "   normal_0 = " << normal_0[q]
+                        //std::cout  << "comp = " << comp << "     q = "<< q << "     i = " << i << ":" << std::endl;
+                        /*std::cout << "temp = " << temp[i] << " phi = " << phi[q] << "   normal_0 = " << normal_0[q]
                           << "  normalized 0 = " << normal_normalized_0 << "  normal_1 = " << normal_1[q]
                           << "  normalized 1 = " << normal_normalized_1 << std::endl;
-                        
+                        */
+
                         if(comp == 0){
-                          temp[i] = fe_eval.quadrature_point(q)[comp] + normal_normalized_0 * std::abs(phi[q]);
+                          temp[i] = fe_eval.quadrature_point(q)[comp]  - 0.01* normal_normalized_0 * phi[q];
                         }else if(comp == 1){
-                          temp[i] = fe_eval.quadrature_point(q)[comp] + normal_normalized_1 * std::abs(phi[q]);
+                          temp[i] = fe_eval.quadrature_point(q)[comp]  - 0.01* normal_normalized_1 * phi[q];
                         }else{
                           std::cout << "I do not understand!" << std::endl;
                         }
-                        std::cout << "temp = " << temp[i] << std::endl;
+                        if (phi[q]==0){
+                          std::cout.precision(8);
+                        std::cout  << "comp = " << comp << "     q = "<< q << "     i = " << i << ":" << std::endl;
+                        std::cout << "x before = " << fe_eval.quadrature_point(q)[comp]<< "   x after = " << temp[i] << std::endl;
+                        std::cout << " phi = " << phi[q] << "     normal 0 = " 
+                                  << normal_normalized_0 << "  normal_1 = " << normal_normalized_1 << std::endl;
+                        }
                         //TODO: save old ls_value to decide if another iteration is necessary by sign comparing?
                         //const auto phi_old = phi;
                       }else{
                         std::cout << "else" << std::endl;
+                        }
                       }
                       //TODO: moved point outside of box? boundary points?
                       // check if point is outside domain and if so then project it back to the
