@@ -238,7 +238,6 @@ namespace dealii
         update_quadrature_points);
 
       Vector<double>                       temp;
-      std::vector<types::global_dof_index> temp_dof_indices;
 
       auto euler_coordinates_vector_temp = euler_coordinates_vector;
 
@@ -287,11 +286,6 @@ namespace dealii
               fe_eval.reinit(cell);
 
               temp.reinit(fe_eval.dofs_per_cell);
-              temp_dof_indices.resize(fe_eval.dofs_per_cell);
-
-              cell->get_dof_indices(temp_dof_indices);
-              
-              cell->get_dof_values(euler_coordinates_vector, temp);
 
               for (const auto q : fe_eval.quadrature_point_indices())
                 {
