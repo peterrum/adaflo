@@ -242,11 +242,14 @@ namespace dealii
 
       auto euler_coordinates_vector_temp = euler_coordinates_vector;
 
-      // velocity_vector.update_ghost_values();
       levelset_vector.update_ghost_values();
       normal_vector.update_ghost_values();
+      
+      const bool use_normal_vector_field = true;
+      const double damping_factor        = 0.01; 
+      const unsigned int n_iterations    = 3;
 
-      for (int j = 0; j < 3 /*TODO: make parameter*/; ++j)
+      for (unsigned int j = 0; j < n_iterations; ++j)
         {
           std::vector<Point<spacedim>> evaluation_points;
           for (const auto &cell : euler_dofhandler.active_cell_iterators())
@@ -266,13 +269,16 @@ namespace dealii
                                          background_dofhandler,
                                          levelset_vector);
         
-          std::array<std::vector<double>, spacedim> evaluation_values_normal;
+          std::array<std::vector<double>, spacedim> evaluation_values_normal_components;
           
           for (unsigned int comp = 0; comp < spacedim; ++comp)
-            evaluation_values_normal[comp] =
-            VectorTools::point_values<1>(cache,
-                                         background_dofhandler,
-                                         normal_vector.block(comp));
+            evaluation_values_normal_components[comp] =
+              VectorTools::point_values<1>(cache,
+                                           background_dofhandler,
+                                           normal_vector.block(comp));
+          
+          const auto evaluation_values_normal = 
+            VectorTools::point_gradients<1>(cache, background_dofhandler, levelset_vector);
           
           unsigned int counter = 0;
 
@@ -293,15 +299,18 @@ namespace dealii
                   
                   Point<spacedim> normal;
                   
-                  for (unsigned int comp = 0; comp < spacedim; ++comp)
-                    normal[comp] = evaluation_values_normal[comp][counter];
+                  if(use_normal_vector_field)
+                    for (unsigned int comp = 0; comp < spacedim; ++comp)
+                      normal[comp] = evaluation_values_normal_components[comp][counter];
+                  else
+                      normal = evaluation_values_normal[counter];
                   
                   if(normal.norm() > 1e-10)
                       normal/=normal.norm();
                   
                   for (unsigned int comp = 0; comp < spacedim; ++comp)
                     temp[euler_dofhandler.get_fe().component_to_system_index(comp, q)] = 
-                            fe_eval.quadrature_point(q)[comp]  - 0.01* normal[comp] * phi;
+                      fe_eval.quadrature_point(q)[comp]  - damping_factor * normal[comp] * phi;
                       
                   counter++;
                 }
