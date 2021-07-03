@@ -325,6 +325,21 @@ template <int dim>
 void
 LevelSetOKZSolverComputeCurvature<dim>::compute_curvature(const bool)
 {
+    
+    std::cout << "## " << std::endl;
+    std::cout << "## " << "compute_curvature()" << std::endl;
+    std::cout << "## " << parameters.epsilon << std::endl;
+    std::cout << "## " << parameters.approximate_projections << std::endl;
+    std::cout << "## " << parameters.curvature_correction << std::endl;
+    std::cout << "## " << epsilon_used << std::endl;
+    std::cout << "## " << solution_curvature.size() << std::endl;
+    std::cout << "## " << rhs.size() << std::endl;
+    std::cout << "## " << solution_ls.size() << std::endl;
+    std::cout << "## " << solution_ls.size() << std::endl;
+    std::cout << "## " << normal_vector_field.block(0).size() << std::endl;
+    
+    
+    
   // compute right hand side
   rhs = 0;
 

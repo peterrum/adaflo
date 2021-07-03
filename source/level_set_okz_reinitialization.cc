@@ -264,6 +264,22 @@ LevelSetOKZSolverReinitialization<dim>::reinitialize(
   const unsigned int               diff_steps,
   const std::function<void(bool)> &compute_normal)
 {
+    std::cout << "## " << std::endl;
+    std::cout << "## " << "reinitialize()" << std::endl;
+    std::cout << "## " << dt << std::endl;
+    std::cout << "## " << stab_steps << std::endl;
+    std::cout << "## " << diff_steps << std::endl;
+    std::cout << "## " << parameters.do_iteration << std::endl;
+    std::cout << "## " << epsilon_used << std::endl;
+    std::cout << "## " << minimal_edge_length << std::endl;
+    std::cout << "## " << last_concentration_range.first << std::endl;
+    std::cout << "## " << last_concentration_range.second << std::endl;
+    std::cout << "## " << first_reinit_step << std::endl;
+    std::cout << "## " << solution.size() << std::endl;
+    std::cout << "## " << solution_update.size() << std::endl;
+    std::cout << "## " << system_rhs.size() << std::endl;
+    std::cout << "## " << normal_vector_field.block(0).size() << std::endl;
+    
   this->time_stepping.set_time_step(dt);
 
   // This function assembles and solves for a given profile using the approach

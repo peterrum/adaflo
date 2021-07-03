@@ -208,6 +208,19 @@ template <int dim>
 void
 LevelSetOKZSolverComputeNormal<dim>::compute_normal(const bool fast_computation)
 {
+    
+    std::cout << "## " << std::endl;
+    std::cout << "## " << "compute_normal()" << std::endl;
+    std::cout << "## " << parameters.epsilon << std::endl;
+    std::cout << "## " << parameters.approximate_projections << std::endl;
+    std::cout << "## " << parameters.damping_scale_factor << std::endl;
+    std::cout << "## " << epsilon_used << std::endl;
+    std::cout << "## " << minimal_edge_length << std::endl;
+    std::cout << "## " << normal_vector_field.block(0).size() << std::endl;
+    std::cout << "## " << normal_vector_rhs.block(0).size() << std::endl;
+    std::cout << "## " << level_set_solution.size() << std::endl;
+    
+    
   // This function computes the normal from a projection of $\nabla C$ onto
   // the space of linear finite elements (with some small damping)
 

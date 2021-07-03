@@ -91,6 +91,8 @@ compute_cell_diameters(const MatrixFree<dim, double> &         matrix_free,
 
   const auto &dof_handler   = matrix_free.get_dof_handler(dof_index);
   const auto &triangulation = dof_handler.get_triangulation();
+  
+  std::cout << triangulation.n_cells() << std::endl;
 
   LAPACKFullMatrix<double> mat(dim, dim);
   FEValues<dim>            fe_values(*matrix_free.get_mapping_info().mapping,
